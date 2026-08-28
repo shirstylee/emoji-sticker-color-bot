@@ -18,6 +18,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from app.context import AppContext
 from app.database.settings import maintenance_enabled
+from app.handlers.commands import show_main_menu
 from app.keyboards.admin import admin_keyboard
 from app.states import AdminStates
 
@@ -30,6 +31,69 @@ def _duration(seconds: float) -> str:
     hours, remainder = divmod(total, 3600)
     minutes, secs = divmod(remainder, 60)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def _switch(value: bool) -> str:
+    return "включён" if value else "выключен"
+
+
+STAT_LABELS = {
+    "jobs_total": "Всего задач",
+    "jobs_success": "Успешно",
+    "jobs_failed": "С ошибкой",
+    "items_processed": "Обработано элементов",
+    "tgs_processed": "TGS",
+    "webm_processed": "WEBM",
+    "raster_processed": "PNG / WEBP",
+    "emoji_packs_created": "Emoji-наборов",
+    "sticker_packs_created": "Наборов стикеров",
+    "telegram_429": "Ограничений Telegram",
+    "processing_ms_total": "Время обработки, мс",
+}
+
+LIMIT_LABELS = {
+    "jobs_10_minutes": "Задач за 10 минут",
+    "jobs_hour": "Задач за час",
+    "jobs_day": "Задач за сутки",
+    "large_hour": "Крупных задач за час",
+    "large_day": "Крупных задач за сутки",
+    "huge_hour": "Очень крупных задач за час",
+    "huge_day": "Очень крупных задач за сутки",
+    "heavy_webm_hour": "Тяжёлых WEBM за час",
+    "heavy_webm_day": "Тяжёлых WEBM за сутки",
+}
+
+SOURCE_LABELS = {
+    "sticker": "Стикер",
+    "custom_emoji": "Custom Emoji",
+    "pack": "Telegram-набор",
+    "file": "Файл",
+    "zip": "ZIP-архив",
+    "unicode": "Unicode Emoji",
+    "media_group": "Группа файлов",
+}
+
+STATUS_LABELS = {
+    "source_analysis": "Анализ источника",
+    "awaiting_color": "Ожидание цвета",
+    "generating_preview": "Создание предпросмотра",
+    "awaiting_preview_decision": "Ожидание подтверждения",
+    "awaiting_output_type": "Выбор результата",
+    "awaiting_pack_name": "Ожидание названия",
+    "awaiting_split_confirmation": "Ожидание разделения",
+    "processing": "Обработка",
+    "publishing": "Публикация",
+    "completed": "Завершено",
+    "cancelled": "Отменено",
+    "failed": "Ошибка",
+}
+
+COMPONENT_LABELS = {
+    "source": "Источник",
+    "preview": "Предпросмотр",
+    "adaptive_preview": "Предпросмотр Adaptive",
+    "processing": "Обработка",
+}
 
 
 async def _directory_size(path: Path) -> int:
@@ -51,17 +115,30 @@ async def _dashboard(context: AppContext) -> str:
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage(str(context.settings.temp_root))
     return (
-        f'{context.premium.html("ADMIN")} <b>Emoji &amp; Sticker Color Bot — Admin</b>\n\n'
-        f"Uptime: {_duration(time.monotonic() - context.started_monotonic)}\n"
-        f"Active jobs: {context.jobs.active_count}\nPending jobs: {context.scheduler.pending}\n"
-        f"Running workers: {context.scheduler.running}\n\n"
-        f"CPU: {psutil.cpu_percent():.1f}%\nRAM: {memory.percent:.1f}%\n"
-        f"Disk: {disk.used / disk.total * 100:.1f}%\n"
-        f"Temp: {(await _directory_size(context.settings.temp_root)) / 1024 / 1024:.1f} MiB\n\n"
-        f"Processed today: {stats.get('jobs_total', 0)}\n"
-        f"Successful: {stats.get('jobs_success', 0)}\nFailed: {stats.get('jobs_failed', 0)}\n"
-        f"Packs created: {stats.get('emoji_packs_created', 0) + stats.get('sticker_packs_created', 0)}\n"
-        f"Telegram 429: {stats.get('telegram_429', 0)}"
+        f'{context.premium.html("ADMIN")} <b>Панель администратора</b>\n\n'
+        "<blockquote>"
+        f'{context.premium.html("TIME")} <b>Состояние сервиса</b>\n'
+        f"Время работы: <code>{_duration(time.monotonic() - context.started_monotonic)}</code>\n"
+        f"Активные задачи: <b>{context.jobs.active_count}</b>\n"
+        f"В очереди: <b>{context.scheduler.pending}</b>\n"
+        f"Занятые обработчики: <b>{context.scheduler.running}</b>"
+        "</blockquote>\n\n"
+        "<blockquote>"
+        f'{context.premium.html("CPU")} <b>Ресурсы сервера</b>\n'
+        f"Процессор: <b>{psutil.cpu_percent():.1f}%</b>\n"
+        f"Оперативная память: <b>{memory.percent:.1f}%</b>\n"
+        f"Диск: <b>{disk.used / disk.total * 100:.1f}%</b>\n"
+        f"Временные файлы: <b>{(await _directory_size(context.settings.temp_root)) / 1024 / 1024:.1f} МиБ</b>"
+        "</blockquote>\n\n"
+        "<blockquote>"
+        f'{context.premium.html("CHART")} <b>Статистика за сегодня</b>\n'
+        f"Всего задач: <b>{stats.get('jobs_total', 0)}</b>\n"
+        f"Успешно: <b>{stats.get('jobs_success', 0)}</b>\n"
+        f"С ошибкой: <b>{stats.get('jobs_failed', 0)}</b>\n"
+        "Создано наборов: "
+        f"<b>{stats.get('emoji_packs_created', 0) + stats.get('sticker_packs_created', 0)}</b>\n"
+        f"Ограничений Telegram: <b>{stats.get('telegram_429', 0)}</b>"
+        "</blockquote>"
     )
 
 
@@ -72,9 +149,9 @@ async def _safe_dashboard(context: AppContext) -> str:
         LOGGER.warning("Admin dashboard metrics unavailable | %s", type(error).__name__)
         return (
             f'{context.premium.html("ADMIN")} '
-            "<b>Emoji &amp; Sticker Color Bot — Admin</b>\n\n"
-            "Панель доступна. Не удалось получить часть системных метрик; "
-            "попробуйте обновить её позже."
+            "<b>Панель администратора</b>\n\n"
+            "<blockquote>Панель доступна, но часть показателей сервера временно "
+            "недоступна. Нажмите «Обновить» через несколько секунд.</blockquote>"
         )
 
 
@@ -143,16 +220,27 @@ async def admin_callback(
             await _safe_dashboard(context),
             admin_keyboard(context.premium, owner=owner),
         )
+    elif action == "close":
+        await state.clear()
+        language = context.languages.get(callback.from_user.id)
+        if language is None:
+            language = await context.admins.language(callback.from_user.id)
+            context.languages[callback.from_user.id] = language
+        if isinstance(callback.message, Message):
+            await show_main_menu(callback.message, context, language)
     elif action == "jobs":
         jobs = context.jobs.active_jobs()
         lines = [f'{context.premium.html("INFO")} <b>Активные задачи</b>']
         rows: list[list[InlineKeyboardButton]] = []
         for job in jobs:
             age = _duration((datetime.now(UTC) - job.created_at).total_seconds())
+            source = job.source.kind.value if job.source else "source"
             lines.append(
-                f"\nJob #{job.short_id}\nType: {job.source.kind.value if job.source else 'source'}\n"
-                f"Items: {job.total}\nProgress: {job.progress} / {job.total}\n"
-                f"State: {job.status.value}\nAge: {age}"
+                f"\n<b>Задача #{job.short_id}</b>\n"
+                f"Тип: {SOURCE_LABELS.get(source, 'Источник')}\n"
+                f"Элементов: {job.total}\nХод выполнения: {job.progress} / {job.total}\n"
+                f"Состояние: {STATUS_LABELS.get(job.status.value, 'Неизвестно')}\n"
+                f"Выполняется: {age}"
             )
             rows.append(
                 [
@@ -202,32 +290,34 @@ async def admin_callback(
         body = (
             f'{context.premium.html("CPU")} <b>Нагрузка</b>\n\n'
             f"CPU: {psutil.cpu_percent(interval=None):.1f}%\n"
-            f"RAM: {memory.percent:.1f}% ({memory.available / 1024 / 1024:.0f} MiB available)\n"
-            f"Disk: {disk.free / 1024 / 1024 / 1024:.1f} GiB free\n"
-            f"TGS workers: {context.settings.tgs_workers}\n"
-            f"Raster workers: {context.settings.raster_workers}\n"
-            f"WEBM workers: {context.settings.webm_workers}"
+            f"Оперативная память: {memory.percent:.1f}% "
+            f"({memory.available / 1024 / 1024:.0f} МиБ свободно)\n"
+            f"Диск: {disk.free / 1024 / 1024 / 1024:.1f} ГиБ свободно\n"
+            f"Обработчики TGS: {context.settings.tgs_workers}\n"
+            f"Обработчики изображений: {context.settings.raster_workers}\n"
+            f"Обработчики WEBM: {context.settings.webm_workers}"
         )
         await _edit_admin(callback, context, body, _admin_action_keyboard(context, "refresh", "Обновить"))
     elif action == "stats":
         stats = await context.database.today_statistics()
         body = f'{context.premium.html("CHART")} <b>Статистика сегодня</b>\n\n' + "\n".join(
-            f"{html.escape(key)}: {value}" for key, value in stats.items()
+            f"{STAT_LABELS.get(key, html.escape(key))}: <b>{value}</b>"
+            for key, value in stats.items()
         )
         await _edit_admin(callback, context, body, _admin_action_keyboard(context, "refresh", "Назад"))
     elif action == "telegram":
         body = (
             f'{context.premium.html("LINK")} <b>Telegram API</b>\n\n'
-            f"Publishing: {'active' if context.scheduler.accepting else 'stopping'}\n"
-            f"Conservative limiter: {'ON' if context.telegram_limiter.enabled else 'OFF'}\n"
-            f"Last retry_after: {context.telegram_limiter.last_retry_after or '—'}\n"
-            "Bot API target: 10.3"
+            f"Публикация: {'активна' if context.scheduler.accepting else 'останавливается'}\n"
+            f"Предварительный ограничитель: {_switch(context.telegram_limiter.enabled)}\n"
+            f"Последнее ожидание: {context.telegram_limiter.last_retry_after or '—'} с\n"
+            "Версия Bot API: 10.3"
         )
         markup = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="Переключить conservative limiter",
+                        text="Переключить ограничитель",
                         callback_data="admin:telegram_toggle",
                         icon_custom_emoji_id=context.premium.button_id("SETTINGS"),
                     )
@@ -245,13 +335,15 @@ async def admin_callback(
         await _edit_admin(
             callback,
             context,
-            f"Conservative limiter: {'ON' if context.telegram_limiter.enabled else 'OFF'}",
+            f"Предварительный ограничитель {_switch(context.telegram_limiter.enabled)}.",
             _admin_action_keyboard(context, "telegram", "Назад"),
         )
     elif action == "limits":
         values = context.limits.as_settings()
         body = f'{context.premium.html("SETTINGS")} <b>Лимиты</b>\n\n' + "\n".join(
-            f"{key}: {value}" for key, value in values.items()
+            f"{LIMIT_LABELS.get(key, key)}: <b>{value}</b> "
+            f"(<code>{key}</code>)"
+            for key, value in values.items()
         )
         if owner:
             body += "\n\nДля изменения отправьте: <code>ключ значение</code>"
@@ -260,7 +352,9 @@ async def admin_callback(
     elif action == "admins" and owner:
         admins = await context.database.list_admins()
         body = f'{context.premium.html("ADMIN")} <b>Администраторы</b>\n\n' + "\n".join(
-            f"{role}: <code>{user_id}</code>" for user_id, role in admins
+            f"{'Владелец' if role == 'owner' else 'Администратор'}: "
+            f"<code>{user_id}</code>"
+            for user_id, role in admins
         )
         markup = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -282,16 +376,18 @@ async def admin_callback(
         await _edit_admin(callback, context, body, markup)
     elif action == "add_admin" and owner:
         await state.set_state(AdminStates.awaiting_add_id)
-        await _edit_admin(callback, context, "Отправьте numeric Telegram user ID нового администратора.")
+        await _edit_admin(callback, context, "Отправьте числовой Telegram ID нового администратора.")
     elif action == "remove_admin" and owner:
         await state.set_state(AdminStates.awaiting_remove_id)
-        await _edit_admin(callback, context, "Отправьте numeric Telegram user ID администратора.")
+        await _edit_admin(callback, context, "Отправьте числовой Telegram ID администратора.")
     elif action == "errors":
         errors = context.errors.latest()
         body = f'{context.premium.html("WARNING")} <b>Ошибки</b>\n\n'
         if errors:
             body += "\n\n".join(
-                f"Job #{item['job_id']}\n{item['component']} | {item['error_type']}\n"
+                f"Задача #{item['job_id']}\n"
+                f"{COMPONENT_LABELS.get(str(item['component']), 'Система')} | "
+                f"{item['error_type']}\n"
                 f"{html.escape(str(item['message']))}"
                 for item in errors
             )
@@ -308,7 +404,7 @@ async def admin_callback(
         await _edit_admin(
             callback,
             context,
-            f'{context.premium.html("DELETE")} Удалено orphan-каталогов: {removed}',
+            f'{context.premium.html("DELETE")} Удалено неиспользуемых каталогов: {removed}',
             _admin_action_keyboard(context, "refresh", "Назад"),
         )
     elif action == "maintenance":
@@ -317,17 +413,17 @@ async def admin_callback(
         await _edit_admin(
             callback,
             context,
-            f"Режим обслуживания: {'ON' if enabled else 'OFF'}",
+            f"Режим обслуживания {_switch(enabled)}.",
             _admin_action_keyboard(context, "maintenance", "Переключить"),
         )
     elif action == "premium":
         diagnostics = context.premium.diagnostics()
         body = (
             f'{context.premium.html("MAGIC")} <b>Premium Emoji</b>\n\n'
-            f"Registry loaded: {diagnostics['loaded']}\n"
-            f"Invalid lines: {diagnostics['invalid']}\n"
-            f"Mappings available: {diagnostics['mappings']}\n"
-            f"Fallback mode: {'ON' if diagnostics['fallback'] else 'OFF'}"
+            f"Загружено записей: {diagnostics['loaded']}\n"
+            f"Некорректных строк: {diagnostics['invalid']}\n"
+            f"Доступно сопоставлений: {diagnostics['mappings']}\n"
+            f"Резервный режим: {_switch(bool(diagnostics['fallback']))}"
         )
         await _edit_admin(callback, context, body, _admin_action_keyboard(context, "refresh", "Назад"))
 
@@ -341,7 +437,7 @@ async def add_admin_message(message: Message, context: AppContext, state: FSMCon
         target = int((message.text or "").strip())
         await context.admins.add(message.from_user.id, target)
     except (ValueError, PermissionError):
-        await message.answer("Некорректный numeric Telegram user ID.")
+        await message.answer("Укажите корректный числовой Telegram ID.")
         return
     await state.clear()
     await message.answer("Администратор добавлен.")
@@ -356,10 +452,10 @@ async def remove_admin_message(message: Message, context: AppContext, state: FSM
         target = int((message.text or "").strip())
         removed = await context.admins.remove(message.from_user.id, target)
     except (ValueError, PermissionError):
-        await message.answer("Некорректный numeric Telegram user ID.")
+        await message.answer("Укажите корректный числовой Telegram ID.")
         return
     await state.clear()
-    await message.answer("Администратор удалён." if removed else "Owner удалить нельзя.")
+    await message.answer("Администратор удалён." if removed else "Владельца удалить нельзя.")
 
 
 @router.message(AdminStates.awaiting_limit)

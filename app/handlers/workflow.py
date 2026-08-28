@@ -6,7 +6,10 @@ import asyncio
 import contextlib
 import html
 import logging
+import math
 import time
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 import psutil
@@ -50,6 +53,46 @@ from app.validators.common import detect_format
 
 LOGGER = logging.getLogger(__name__)
 router = Router(name="workflow")
+
+
+def _countdown(seconds: float) -> str:
+    total = max(0, math.ceil(seconds))
+    minutes, remainder = divmod(total, 60)
+    return f"{minutes:02d}:{remainder:02d}"
+
+
+async def _show_flood_wait(
+    control: Message,
+    job: RuntimeJob,
+    context: AppContext,
+    remaining: float,
+) -> None:
+    try:
+        await context.ui.edit(
+            control,
+            f'{context.premium.html("TIME")} '
+            + text(job.language, "flood_wait", seconds=_countdown(remaining)),
+            reply_markup=processing_keyboard(
+                context.premium, job.job_id, job.language
+            ),
+        )
+    except Exception:
+        return
+
+
+async def _telegram_send(
+    operation: Callable[[], Awaitable[Message]],
+    control: Message,
+    job: RuntimeJob,
+    context: AppContext,
+) -> Message:
+    return await context.telegram_limiter.call(
+        operation,
+        job.cancel_event,
+        on_flood=lambda remaining: _show_flood_wait(
+            control, job, context, remaining
+        ),
+    )
 
 
 def _job_kind(job: RuntimeJob) -> str:
@@ -222,14 +265,30 @@ def _looks_like_new_source(message: Message) -> bool:
 async def private_message(message: Message, context: AppContext) -> None:
     if message.from_user is None:
         return
+    is_admin = await context.admins.is_admin(message.from_user.id)
     active = sorted(context.jobs.for_user(message.from_user.id), key=lambda item: item.created_at)
     if active:
         job = active[-1]
         if job.status == JobStatus.AWAITING_COLOR and message.text and not _looks_like_new_source(message):
             await _handle_color_text(message, job, context)
             return
-        if job.status == JobStatus.AWAITING_PACK_NAME and message.text:
+        if (
+            job.status == JobStatus.AWAITING_PACK_NAME
+            and message.text
+            and not _looks_like_new_source(message)
+        ):
             await _handle_pack_name(message, job, context)
+            return
+        if is_admin and _looks_like_new_source(message):
+            if message.media_group_id:
+                context.media_groups.add(
+                    message.from_user.id,
+                    message.media_group_id,
+                    message,
+                    lambda messages: _accept_source(messages[0], context, messages),
+                )
+            else:
+                await _accept_source(message, context)
             return
         await context.ui.answer(
             message,
@@ -266,16 +325,31 @@ async def _send_preview(
         return
     filename = f"preview{path.suffix.lower()}"
     if media_format == MediaFormat.PNG:
-        preview = await control.answer_photo(FSInputFile(path, filename=filename))
+        preview = await _telegram_send(
+            lambda: control.answer_photo(FSInputFile(path, filename=filename)),
+            control,
+            job,
+            context,
+        )
     else:
         try:
-            preview = await control.answer_sticker(FSInputFile(path, filename=filename))
+            preview = await _telegram_send(
+                lambda: control.answer_sticker(FSInputFile(path, filename=filename)),
+                control,
+                job,
+                context,
+            )
         except TelegramBadRequest as error:
             if "wrong file type" not in str(error).lower():
                 raise
-            preview = await control.answer_document(
-                FSInputFile(path, filename=filename),
-                disable_content_type_detection=True,
+            preview = await _telegram_send(
+                lambda: control.answer_document(
+                    FSInputFile(path, filename=filename),
+                    disable_content_type_detection=True,
+                ),
+                control,
+                job,
+                context,
             )
     job.preview_message_id = preview.message_id
 
@@ -514,8 +588,15 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
         outputs = await context.pipeline.process_all(job, progress)
         if job.output_type == OutputType.FILE:
             path = outputs[0][1]
-            await control.answer_document(
-                FSInputFile(path, filename=f"recolored{path.suffix.lower()}")
+            await _telegram_send(
+                lambda: control.answer_document(
+                    FSInputFile(
+                        path, filename=f"recolored{path.suffix.lower()}"
+                    )
+                ),
+                control,
+                job,
+                context,
             )
             await context.ui.edit(
                 control,
@@ -582,7 +663,17 @@ async def _deliver_zip(
         part_limit=context.settings.max_output_zip_part,
     )
     for part in parts:
-        await control.answer_document(FSInputFile(part, filename=part.name))
+        async def send_part(part: Path = part) -> Message:
+            return await control.answer_document(
+                FSInputFile(part, filename=part.name)
+            )
+
+        await _telegram_send(
+            send_part,
+            control,
+            job,
+            context,
+        )
     body = text(
         job.language,
         "done_file",
@@ -622,6 +713,7 @@ async def _publish_packs(
     )
     groups = [outputs[index : index + maximum] for index in range(0, len(outputs), maximum)]
     links: list[str] = []
+    saved_packs: list[dict[str, str]] = []
     for index, group in enumerate(groups, 1):
         if len(groups) == 1:
             part_title = title
@@ -632,18 +724,6 @@ async def _publish_packs(
             (path, detect_format(path), item.emoji_list)
             for item, path in group
         ]
-        async def on_flood(_: float) -> None:
-            try:
-                await context.ui.edit(
-                    control,
-                    f'{context.premium.html("TIME")} {text(job.language, "flood_wait")}',
-                    reply_markup=processing_keyboard(
-                        context.premium, job.job_id, job.language
-                    ),
-                )
-            except Exception:
-                return
-
         name = await context.publisher.publish_set(
             user_id=job.user_id,
             title=part_title,
@@ -652,10 +732,23 @@ async def _publish_packs(
             custom_emoji=custom,
             needs_repainting=job.adaptive,
             cancel_event=job.cancel_event,
-            on_flood=on_flood,
+            on_flood=lambda remaining: _show_flood_wait(
+                control, job, context, remaining
+            ),
         )
         job.created_sets.append(name)
-        links.append(pack_url(name, custom_emoji=custom))
+        url = pack_url(name, custom_emoji=custom)
+        links.append(url)
+        saved_packs.append(
+            {
+                "title": part_title,
+                "url": url,
+                "kind": "emoji" if custom else "sticker",
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
+    if job.is_admin:
+        await context.admins.remember_packs(job.user_id, saved_packs)
     await context.database.increment_statistics(
         {"emoji_packs_created" if custom else "sticker_packs_created": len(links)}
     )
@@ -777,11 +870,27 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
         job.status = JobStatus.AWAITING_PREVIEW_DECISION
         if job.source:
             item = job.source.items[0]
-            preview_path = item.preview_path or item.path
-            preview_format = MediaFormat.PNG if item.preview_path else item.format
-            await _send_preview(
-                control, job, preview_path, preview_format, context
-            )
+            try:
+                preview_path = await context.pipeline.process_item(
+                    job, item, preview=True
+                )
+                preview_format = (
+                    MediaFormat.PNG
+                    if preview_path.suffix.lower() == ".png"
+                    else item.format
+                )
+                await _send_preview(
+                    control, job, preview_path, preview_format, context
+                )
+            except Exception as error:
+                context.errors.add(
+                    job_id=job.job_id,
+                    component="adaptive_preview",
+                    error=error,
+                )
+                await _source_error(control, job.language, context, error)
+                job.status = JobStatus.AWAITING_COLOR
+                return
         await context.ui.edit(
             control,
             text(job.language, "adaptive_preview", icon=context.premium.html("MAGIC")),

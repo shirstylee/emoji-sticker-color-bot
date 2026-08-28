@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from app.database.connection import Database
 
 
@@ -17,6 +19,28 @@ class AdminService:
 
     async def is_owner(self, user_id: int) -> bool:
         return user_id == self.owner_id
+
+    async def language(self, user_id: int) -> str:
+        if not await self.is_admin(user_id):
+            return "ru"
+        return await self.database.admin_language(user_id)
+
+    async def set_language(self, user_id: int, language: str) -> None:
+        if not await self.is_admin(user_id):
+            raise PermissionError("Only administrators can save a language")
+        await self.database.set_admin_language(user_id, language)
+
+    async def packs(self, user_id: int) -> list[dict[str, str]]:
+        if not await self.is_admin(user_id):
+            return []
+        return await self.database.admin_packs(user_id)
+
+    async def remember_packs(
+        self, user_id: int, packs: Sequence[Mapping[str, str]]
+    ) -> None:
+        if not await self.is_admin(user_id):
+            raise PermissionError("Only administrator packs can be persisted")
+        await self.database.add_admin_packs(user_id, packs)
 
     async def add(self, actor_id: int, target_id: int) -> None:
         if not await self.is_owner(actor_id):

@@ -13,17 +13,18 @@ RU: dict[str, str] = {
         "{info_icon} Выберите действие:"
     ),
     "send_source": (
-        "{icon} <b>Отправьте материал для перекраски:</b>\n\n"
+        "<blockquote>{icon} <b>Отправьте материал для перекраски:</b>\n\n"
         "{emoji_icon} Premium Emoji — отдельным сообщением\n"
         "{sticker_icon} Стикер — отдельным сообщением\n"
         "{link_icon} Ссылка на набор — addemoji или addstickers\n"
-        "{file_icon} Файл — TGS, WEBP, WEBM, PNG или ZIP"
+        "{file_icon} Файл — TGS, WEBP, WEBM, PNG или ZIP</blockquote>"
     ),
     "my_packs": (
         "{icon} <b>Мои наборы</b>\n\n"
-        "{lock_icon} Бот не хранит историю пользователей и созданных наборов.\n\n"
+        "{pack_list}\n\n"
         "{link_icon} Управлять добавленными наборами можно в официальном боте @Stickers."
     ),
+    "my_packs_empty": "{lock_icon} Вы пока не создали ни одного набора через бота.",
     "information": (
         "{icon} <b>Emoji &amp; Sticker Color Bot</b>\n\n"
         "{color_icon} Перекрашивает Premium Emoji, стикеры и наборы с сохранением "
@@ -93,7 +94,10 @@ RU: dict[str, str] = {
     "publishing": (
         "{icon} Файлы готовы.\n{pack_icon} Загружаю элементы в Telegram…"
     ),
-    "flood_wait": "Telegram временно ограничил скорость. Загрузка продолжится автоматически.",
+    "flood_wait": (
+        "Telegram временно ограничил скорость.\n"
+        "Продолжение через <code>{seconds}</code>."
+    ),
     "done_file": (
         "{icon} Готово. Цвет: <code>{color}</code>\n"
         "{download_icon} Файл отправлен выше."

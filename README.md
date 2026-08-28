@@ -13,7 +13,7 @@
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" />
   <img alt="aiogram 3.31" src="https://img.shields.io/badge/aiogram-3.31-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
   <img alt="Telegram Bot API 10.3" src="https://img.shields.io/badge/Bot_API-10.3-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
-  <img alt="Tests: 99 passed" src="https://img.shields.io/badge/tests-99%20passed-2EA44F?style=flat-square" />
+  <img alt="Tests: 110 passed" src="https://img.shields.io/badge/tests-110%20passed-2EA44F?style=flat-square" />
   <img alt="Interface: Russian, admin RU and EN" src="https://img.shields.io/badge/interface-RU%20%7C%20admin%20RU%20%2F%20EN-7C3AED?style=flat-square" />
 </p>
 
@@ -43,11 +43,12 @@
 - 🌀 **Нативные форматы Telegram** — безопасная работа с TGS, WEBM, WEBP и PNG без подмены форматов.
 - 📦 **Гибкий результат** — новый Emoji Pack, Sticker Pack, исходный файл или ZIP-архив.
 - 🌈 **Любой цвет** — HEX, RGB, короткие HEX-значения и названия базовых цветов.
+- 🌓 **Контрастный Adaptive** — светлые и тёмные детали переносятся в alpha-маску, а уже Adaptive-источники получают насыщенный точный цвет.
 - 💎 **Premium Emoji в интерфейсе** — используются реальные Custom Emoji ID из `Main.txt` с автоматическим Unicode fallback.
-- 🚦 **Контроль нагрузки** — очередь задач, отдельные лимиты тяжёлых операций, обработка Telegram `retry_after` и отмена без перезапуска job.
+- 🚦 **Контроль нагрузки** — очередь задач, отдельные лимиты тяжёлых операций, живой таймер Telegram `retry_after` и отмена без перезапуска job.
 - 🧹 **Автоочистка** — временные файлы удаляются после успеха, ошибки, отмены, таймаута и при следующем запуске.
-- 🔐 **Без сохранения истории** — пользовательские ID, история, тексты, файлы и названия наборов не сохраняются в базе.
-- 🤖 **Telegram-only админ-панель** — мониторинг состояния, агрегированной статистики, лимитов, ошибок и Premium Emoji.
+- 🔐 **Без сохранения истории пользователей** — данные обычных пользователей, тексты и файлы не сохраняются в базе.
+- 🤖 **Telegram-only админ-панель** — русская панель мониторинга; язык, настройки и созданные администратором наборы сохраняются между перезапусками.
 
 ---
 
@@ -117,7 +118,7 @@ CPU-heavy операции выполняются через ограничен�
 | Runtime | Python 3.12+, `asyncio`, `pydantic-settings` |
 | Изображения | NumPy, Pillow, linear sRGB, OKLab |
 | Анимация | Lottie/TGS, `imageio-ffmpeg`, VP9/alpha |
-| Хранилище | SQLite / `aiosqlite`, только обезличенные данные |
+| Хранилище | SQLite / `aiosqlite`, агрегаты и разрешённые служебные данные администраторов |
 | Валидация | сигнатуры файлов, Pillow, FFmpeg probe, safe ZIP extraction |
 | Качество | Ruff, mypy, pytest |
 | Развёртывание | `.venv`, `.env`, hardened systemd unit |
@@ -209,7 +210,7 @@ COLOR_PICKER_URL=https://htmlcolorcodes.com/color-picker/
 - `/colors` — примеры цветов;
 - `/cancel` — отменить текущую задачу;
 
-Обычным пользователям доступен только русский интерфейс. Для owner и назначенных администраторов дополнительно доступны `/language` (русский/английский), кнопка «Мои наборы» и `/admin`: uptime, jobs, workers, CPU/RAM/disk/temp, агрегированная статистика, Telegram 429, лимиты, ошибки, maintenance mode, Premium Emoji и управление администраторами.
+Обычным пользователям доступен только русский интерфейс. Для owner и назначенных администраторов дополнительно доступны `/language` (выбор сохраняется), «Мои наборы» с постоянной историей созданных паков и русская `/admin`: состояние сервиса, задачи, нагрузка, статистика, Telegram API, лимиты, ошибки, режим обслуживания, Premium Emoji и управление администраторами. Администратор может запускать несколько логических задач одновременно; фактический параллелизм ограничивается только безопасными ресурсными worker-лимитами сервера.
 
 ---
 
@@ -229,7 +230,7 @@ Offline-диагностика не требует Bot Token:
 .venv\Scripts\python.exe -m pytest
 ```
 
-Тесты покрывают парсинг цветов, OKLab/alpha/contrast, TGS, WEBM, ZIP security, лимиты, RAM-only jobs, очистку, Telegram 429, silent `/admin`, SQLite-схему и ключевые workflow-компоненты.
+Тесты покрывают парсинг цветов, OKLab/alpha/contrast, Adaptive-маски, нормализацию TGS timing, WEBM, ZIP security, лимиты, параллельные админские задачи, живой Telegram 429 countdown, миграцию SQLite, silent `/admin` и ключевые workflow-компоненты.
 
 ---
 

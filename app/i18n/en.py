@@ -13,17 +13,18 @@ EN: dict[str, str] = {
         "{info_icon} Choose an action:"
     ),
     "send_source": (
-        "{icon} <b>Send material to recolor:</b>\n\n"
+        "<blockquote>{icon} <b>Send material to recolor:</b>\n\n"
         "{emoji_icon} Premium Emoji — as a separate message\n"
         "{sticker_icon} Sticker — as a separate message\n"
         "{link_icon} Pack link — addemoji or addstickers\n"
-        "{file_icon} File — TGS, WEBP, WEBM, PNG, or ZIP"
+        "{file_icon} File — TGS, WEBP, WEBM, PNG, or ZIP</blockquote>"
     ),
     "my_packs": (
         "{icon} <b>My packs</b>\n\n"
-        "{lock_icon} The bot does not store user or pack history.\n\n"
+        "{pack_list}\n\n"
         "{link_icon} Manage packs you added through the official @Stickers bot."
     ),
+    "my_packs_empty": "{lock_icon} You have not created any packs through the bot yet.",
     "information": (
         "{icon} <b>Emoji &amp; Sticker Color Bot</b>\n\n"
         "{color_icon} Recolors Premium Emoji, stickers, and packs while preserving outlines, "
@@ -93,7 +94,10 @@ EN: dict[str, str] = {
     "publishing": (
         "{icon} Files are ready.\n{pack_icon} Uploading items to Telegram…"
     ),
-    "flood_wait": "Telegram temporarily limited the upload speed. It will continue automatically.",
+    "flood_wait": (
+        "Telegram temporarily limited the upload speed.\n"
+        "Continuing in <code>{seconds}</code>."
+    ),
     "done_file": (
         "{icon} Done. Color: <code>{color}</code>\n"
         "{download_icon} The file was sent above."

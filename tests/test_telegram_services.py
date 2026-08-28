@@ -56,6 +56,41 @@ async def test_retry_after_resumes_same_operation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_flood_callback_receives_live_countdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [0.0]
+
+    async def fake_sleep(seconds: float, _cancel: asyncio.Event) -> None:
+        clock[0] += seconds
+
+    monkeypatch.setattr(
+        "app.services.telegram_rate_limiter.time.monotonic", lambda: clock[0]
+    )
+    monkeypatch.setattr(
+        "app.services.telegram_rate_limiter.cancellation_aware_sleep", fake_sleep
+    )
+    controller = TelegramStickerRateController()
+    attempts = 0
+    countdown: list[float] = []
+
+    async def operation() -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RetryError(2.2)
+        return "ok"
+
+    async def on_flood(remaining: float) -> None:
+        countdown.append(remaining)
+
+    assert await controller.call(
+        operation, asyncio.Event(), on_flood=on_flood
+    ) == "ok"
+    assert countdown == [3.0, 2.0, 1.0]
+
+
+@pytest.mark.asyncio
 async def test_cancellation_during_flood_wait() -> None:
     controller = TelegramStickerRateController()
     cancel = asyncio.Event()

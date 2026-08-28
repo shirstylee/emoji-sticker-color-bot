@@ -8,7 +8,7 @@ import pytest
 from aiogram.types import Chat, Message, MessageEntity, User
 
 from app.handlers.commands import start
-from app.handlers.workflow import _looks_like_new_source, job_callback
+from app.handlers.workflow import _looks_like_new_source, job_callback, private_message
 from app.models.job import JobStatus
 from app.services.jobs import JobManager
 from app.services.premium_emoji import PremiumEmojiRegistry
@@ -46,7 +46,7 @@ async def test_regular_start_is_russian_without_language_or_packs() -> None:
 
 
 @pytest.mark.asyncio
-async def test_admin_start_asks_for_language_with_real_flags() -> None:
+async def test_admin_start_uses_saved_language_without_prompt() -> None:
     registry = PremiumEmojiRegistry.load(Path("Main.txt"))
     sent = SimpleNamespace(message_id=20)
     context = SimpleNamespace(
@@ -54,7 +54,7 @@ async def test_admin_start_asks_for_language_with_real_flags() -> None:
         ui=SimpleNamespace(answer=AsyncMock(return_value=sent)),
         bot=SimpleNamespace(delete_message=AsyncMock()),
         menu_messages={},
-        languages={},
+        languages={7: "en"},
         admins=SimpleNamespace(is_admin=AsyncMock(return_value=True)),
     )
     message = SimpleNamespace(
@@ -66,9 +66,41 @@ async def test_admin_start_asks_for_language_with_real_flags() -> None:
     await start(message, context)  # type: ignore[arg-type]
 
     markup = context.ui.answer.await_args.kwargs["reply_markup"]
-    assert "Выберите язык" in context.ui.answer.await_args.args[1]
-    assert markup.inline_keyboard[0][0].icon_custom_emoji_id == "5449408995691341691"
-    assert markup.inline_keyboard[1][0].icon_custom_emoji_id == "5202021044105257611"
+    assert "Choose an action" in context.ui.answer.await_args.args[1]
+    assert [row[0].text for row in markup.inline_keyboard] == [
+        "Recolor Emoji",
+        "My packs",
+        "Information",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_admin_can_submit_another_source_while_job_is_active(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accept = AsyncMock()
+    monkeypatch.setattr("app.handlers.workflow._accept_source", accept)
+    active_job = SimpleNamespace(
+        status=JobStatus.PROCESSING,
+        created_at=0,
+        language="ru",
+        job_id="current",
+    )
+    context = SimpleNamespace(
+        admins=SimpleNamespace(is_admin=AsyncMock(return_value=True)),
+        jobs=SimpleNamespace(for_user=lambda _user_id: [active_job]),
+    )
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=7),
+        document=SimpleNamespace(),
+        sticker=None,
+        text=None,
+        media_group_id=None,
+    )
+
+    await private_message(message, context)  # type: ignore[arg-type]
+
+    accept.assert_awaited_once_with(message, context)
 
 
 def test_hex_hashtag_entity_is_a_color_not_a_new_source() -> None:

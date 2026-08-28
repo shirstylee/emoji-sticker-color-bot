@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image, UnidentifiedImageError
 
 from app.constants import TELEGRAM_CUSTOM_EMOJI_SIDE, TELEGRAM_REGULAR_STICKER_SIDE
-from app.recolor.color_math import ParsedColor, recolor_rgb
+from app.recolor.color_math import ParsedColor, adaptive_alpha, recolor_rgb
 
 
 class RasterError(ValueError):
@@ -34,12 +34,27 @@ def load_rgba(
         Image.MAX_IMAGE_PIXELS = old_limit
 
 
-def recolor_image(image: Image.Image, target: ParsedColor) -> Image.Image:
+def recolor_image(
+    image: Image.Image,
+    target: ParsedColor,
+    *,
+    adaptive: bool = False,
+    strong: bool = False,
+) -> Image.Image:
     rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8)
     alpha = rgba[..., 3].copy()
     output = np.empty_like(rgba)
-    output[..., :3] = recolor_rgb(rgba[..., :3], target, weights=alpha.astype(np.float64) / 255.0)
-    output[..., 3] = alpha
+    if adaptive:
+        output[..., :3] = 255
+        output[..., 3] = adaptive_alpha(rgba[..., :3], alpha)
+    elif strong:
+        output[..., :3] = np.asarray(target.rgb, dtype=np.uint8)
+        output[..., 3] = alpha
+    else:
+        output[..., :3] = recolor_rgb(
+            rgba[..., :3], target, weights=alpha.astype(np.float64) / 255.0
+        )
+        output[..., 3] = alpha
     return Image.fromarray(output, mode="RGBA")
 
 
@@ -68,9 +83,14 @@ def recolor_raster_file(
     max_dimension: int = 4096,
     max_pixels: int = 16_000_000,
     maximum_bytes: int | None = None,
+    adaptive: bool = False,
+    strong: bool = False,
 ) -> Path:
     image = recolor_image(
-        load_rgba(source, max_dimension=max_dimension, max_pixels=max_pixels), target
+        load_rgba(source, max_dimension=max_dimension, max_pixels=max_pixels),
+        target,
+        adaptive=adaptive,
+        strong=strong,
     )
     if custom_emoji is not None:
         image = prepare_static_output(image, custom_emoji=custom_emoji)

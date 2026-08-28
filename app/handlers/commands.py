@@ -1,8 +1,9 @@
-"""Public commands and RAM-only language selection."""
+"""Public commands and persistent administrator language selection."""
 
 from __future__ import annotations
 
 import contextlib
+import html
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
@@ -72,10 +73,18 @@ async def start(message: Message, context: AppContext) -> None:
     await _delete_previous_menu(context, message.from_user.id)
     is_admin = await context.admins.is_admin(message.from_user.id)
     if is_admin:
+        language = current_language(message, context, is_admin=True)
         sent = await context.ui.answer(
             message,
-            text("ru", "language_prompt", icon=context.premium.html("LANGUAGE")),
-            reply_markup=language_keyboard(context.premium),
+            text(
+                language,
+                "main_menu",
+                icon=context.premium.html("BRUSH"),
+                **context.premium.placeholders(),
+            ),
+            reply_markup=main_menu_keyboard(
+                context.premium, language, is_admin=True
+            ),
         )
     else:
         context.languages.pop(message.from_user.id, None)
@@ -157,6 +166,7 @@ async def language_callback(callback: CallbackQuery, context: AppContext) -> Non
     if language not in {"ru", "en"}:
         return
     context.languages[callback.from_user.id] = language
+    await context.admins.set_language(callback.from_user.id, language)
     await callback.answer()
     if isinstance(callback.message, Message):
         await show_main_menu(callback.message, context, language)
@@ -191,12 +201,46 @@ async def menu_callback(callback: CallbackQuery, context: AppContext) -> None:
         if not is_admin:
             await show_main_menu(callback.message, context, "ru")
             return
+        packs = await context.admins.packs(callback.from_user.id)
+        if packs:
+            visible = packs[-25:]
+            lines = []
+            for pack in reversed(visible):
+                title = html.escape(pack.get("title", "Набор"))
+                url = html.escape(pack.get("url", ""), quote=True)
+                kind = pack.get("kind", "sticker")
+                if language == "ru":
+                    kind_label = (
+                        "Emoji-набор" if kind == "emoji" else "Набор стикеров"
+                    )
+                else:
+                    kind_label = (
+                        "Emoji Pack" if kind == "emoji" else "Sticker Pack"
+                    )
+                lines.append(
+                    f'{context.premium.html("PACK")} '
+                    f'<a href="{url}">{title}</a> — {kind_label}'
+                )
+            if len(packs) > len(visible):
+                lines.append(
+                    f"\nПоказаны последние {len(visible)} из {len(packs)} наборов."
+                    if language == "ru"
+                    else f"\nShowing the latest {len(visible)} of {len(packs)} packs."
+                )
+            pack_list = "\n".join(lines)
+        else:
+            pack_list = text(
+                language,
+                "my_packs_empty",
+                **context.premium.placeholders(),
+            )
         await context.ui.edit(
             callback.message,
             text(
                 language,
                 "my_packs",
                 icon=context.premium.html("PACK"),
+                pack_list=pack_list,
                 **context.premium.placeholders(),
             ),
             reply_markup=packs_keyboard(context.premium, language),

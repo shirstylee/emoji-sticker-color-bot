@@ -10,9 +10,12 @@ import pytest
 from app.recolor.color_math import parse_color, srgb_to_oklab
 from app.recolor.tgs import (
     TgsError,
+    adaptive_tgs_document,
     load_tgs,
+    normalize_tgs_timing,
     recolor_tgs_document,
     save_tgs,
+    strong_tint_tgs_document,
 )
 
 
@@ -109,3 +112,31 @@ def test_tgs_decompressed_limit(tmp_path: Path) -> None:
         target.write(payload)
     with pytest.raises(TgsError, match="exceeds"):
         load_tgs(path, max_decompressed=512)
+
+
+def test_nonstandard_tgs_timing_is_normalized_to_telegram_requirements() -> None:
+    source = sample_document()
+    source["fr"] = 30
+    source["op"] = 120
+    source["layers"][0]["shapes"][1]["c"]["k"][0]["t"] = 60  # type: ignore[index]
+
+    output = normalize_tgs_timing(source)
+
+    assert output["fr"] == 60
+    assert float(output["op"]) - float(output["ip"]) == 180
+    assert output["layers"][0]["shapes"][1]["c"]["k"][0]["t"] == 90  # type: ignore[index]
+
+
+def test_tgs_adaptive_mask_and_strong_tint_preserve_alpha() -> None:
+    source = sample_document()
+    adaptive = adaptive_tgs_document(source)
+    shapes = adaptive["layers"][0]["shapes"]  # type: ignore[index]
+    assert shapes[0]["c"]["k"][:3] == [1.0, 1.0, 1.0]
+    keyframe = shapes[1]["c"]["k"][0]
+    assert keyframe["s"][:3] == [1.0, 1.0, 1.0]
+    assert keyframe["e"][:3] == [1.0, 1.0, 1.0]
+    assert min(keyframe["s"][3], keyframe["e"][3]) < 1.0
+
+    strong = strong_tint_tgs_document(source, parse_color("#FF0000"))
+    strong_shapes = strong["layers"][0]["shapes"]  # type: ignore[index]
+    assert strong_shapes[0]["c"]["k"] == [1.0, 0.0, 0.0, 1.0]

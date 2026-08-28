@@ -11,7 +11,7 @@ import imageio_ffmpeg
 import numpy as np
 
 from app.constants import TELEGRAM_VIDEO_MAX_DURATION_SECONDS, TELEGRAM_VIDEO_MAX_FPS
-from app.recolor.color_math import ParsedColor, recolor_rgb
+from app.recolor.color_math import ParsedColor, adaptive_alpha, recolor_rgb
 
 DURATION_RE = re.compile(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
 VIDEO_RE = re.compile(
@@ -108,6 +108,8 @@ async def recolor_webm_file(
     cancel_event: asyncio.Event,
     timeout: float = 180,
     crf: int = 34,
+    adaptive: bool = False,
+    strong: bool = False,
 ) -> Path:
     info = await probe_webm(source)
     if info.duration > TELEGRAM_VIDEO_MAX_DURATION_SECONDS + 0.01:
@@ -192,15 +194,23 @@ async def recolor_webm_file(
                 break
             frame = np.frombuffer(payload, dtype=np.uint8).reshape(height, width, 4)
             alpha = frame[..., 3].copy()
-            recolored = await asyncio.to_thread(
-                recolor_rgb,
-                frame[..., :3],
-                target,
-                weights=alpha.astype(np.float64) / 255.0,
-            )
             output = np.empty_like(frame)
-            output[..., :3] = recolored
-            output[..., 3] = alpha
+            if adaptive:
+                output[..., :3] = 255
+                output[..., 3] = await asyncio.to_thread(
+                    adaptive_alpha, frame[..., :3], alpha
+                )
+            elif strong:
+                output[..., :3] = np.asarray(target.rgb, dtype=np.uint8)
+                output[..., 3] = alpha
+            else:
+                output[..., :3] = await asyncio.to_thread(
+                    recolor_rgb,
+                    frame[..., :3],
+                    target,
+                    weights=alpha.astype(np.float64) / 255.0,
+                )
+                output[..., 3] = alpha
             encoder_stdin.write(output.tobytes())
             await encoder_stdin.drain()
         encoder_stdin.close()
@@ -238,6 +248,8 @@ async def optimize_webm(
     maximum_bytes: int,
     cancel_event: asyncio.Event,
     timeout: float,
+    adaptive: bool = False,
+    strong: bool = False,
 ) -> Path:
     for attempt, crf in enumerate((30, 34, 38, 42), 1):
         candidate = destination.with_name(f"{destination.stem}_{attempt}{destination.suffix}")
@@ -249,6 +261,8 @@ async def optimize_webm(
             cancel_event=cancel_event,
             timeout=timeout,
             crf=crf,
+            adaptive=adaptive,
+            strong=strong,
         )
         if candidate.stat().st_size <= maximum_bytes:
             candidate.replace(destination)

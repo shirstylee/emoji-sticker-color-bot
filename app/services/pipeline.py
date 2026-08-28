@@ -48,6 +48,8 @@ class ProcessingPipeline:
         preview: bool = False,
     ) -> Path:
         target = parse_color(job.selected_color or "#000000")
+        adaptive = bool(getattr(job, "adaptive", False))
+        strong = bool(item.needs_repainting and not adaptive)
         output_type = job.output_type or OutputType.FILE
         directory = job.root / ("preview" if preview else "processed")
         destination = directory / f"{item.index:03d}{output_extension(item, output_type)}"
@@ -57,7 +59,11 @@ class ProcessingPipeline:
             if output_type in {OutputType.EMOJI_PACK, OutputType.STICKER_PACK}
             else None
         )
-        if preview and item.preview_path is not None:
+        # Telegram thumbnails are often JPEG and therefore have no alpha. They
+        # are useful for ordinary TGS previews, but must never be used to build
+        # an Adaptive mask or a strong tint because their opaque background
+        # would become part of the emoji.
+        if preview and item.preview_path is not None and not adaptive and not strong:
             preview_source = item.preview_path
             destination = directory / f"{item.index:03d}.png"
 
@@ -70,6 +76,8 @@ class ProcessingPipeline:
                     custom_emoji=None,
                     max_dimension=self.settings.max_raster_dimension,
                     max_pixels=self.settings.max_raster_pixels,
+                    adaptive=adaptive,
+                    strong=strong,
                 )
 
             result = await self.scheduler.submit(
@@ -93,6 +101,8 @@ class ProcessingPipeline:
                     destination,
                     target,
                     max_decompressed=self.settings.max_tgs_json,
+                    adaptive=adaptive,
+                    strong=strong,
                 )
                 if result.stat().st_size > TELEGRAM_TGS_MAX_BYTES:
                     result.unlink(missing_ok=True)
@@ -123,6 +133,8 @@ class ProcessingPipeline:
                     maximum_bytes=TELEGRAM_WEBM_MAX_BYTES,
                     cancel_event=job.cancel_event,
                     timeout=self.settings.ffmpeg_timeout_seconds,
+                    adaptive=adaptive,
+                    strong=strong,
                 )
 
             result = await self.scheduler.submit(
@@ -153,6 +165,8 @@ class ProcessingPipeline:
                 maximum_bytes=TELEGRAM_STATIC_STICKER_MAX_BYTES
                 if output_type in {OutputType.EMOJI_PACK, OutputType.STICKER_PACK}
                 else None,
+                adaptive=adaptive,
+                strong=strong,
             )
 
         result = await self.scheduler.submit(

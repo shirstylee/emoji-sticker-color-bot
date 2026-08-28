@@ -72,8 +72,10 @@ def _button(
 def language_keyboard(registry: PremiumEmojiRegistry) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [_button(registry, "FLAG_RU", "Русский", callback_data="lang:ru")],
-            [_button(registry, "FLAG_EN", "English", callback_data="lang:en")],
+            [
+                _button(registry, "FLAG_RU", "Русский", callback_data="lang:ru"),
+                _button(registry, "FLAG_EN", "English", callback_data="lang:en"),
+            ],
         ]
     )
 

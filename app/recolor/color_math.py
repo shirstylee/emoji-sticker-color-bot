@@ -166,6 +166,50 @@ def palette_lightness_midpoint(
     return float(np.clip(np.median(lightness), 0.08, 0.92))
 
 
+def adaptive_alpha(
+    rgb: NDArray[np.uint8] | FloatArray,
+    alpha: NDArray[np.uint8] | FloatArray,
+) -> NDArray[np.uint8]:
+    """Encode foreground contrast as alpha for Telegram repaintable emoji.
+
+    Telegram replaces the visible color of ``needs_repainting`` emoji, so RGB
+    differences alone disappear. Keeping the dominant tone opaque and turning
+    lighter and darker details into negative-space opacity preserves symbols,
+    outlines and highlights after Telegram applies its theme color.
+    """
+
+    source = np.asarray(rgb, dtype=np.float64)
+    if source.max(initial=0.0) > 1.0:
+        source /= 255.0
+    source_alpha = np.asarray(alpha, dtype=np.float64)
+    if source_alpha.max(initial=0.0) > 1.0:
+        source_alpha /= 255.0
+    lightness = srgb_to_oklab(np.clip(source, 0.0, 1.0))[..., 0]
+    visible = source_alpha > 0.02
+    samples = lightness[visible]
+    if samples.size == 0:
+        return np.zeros(source_alpha.shape, dtype=np.uint8)
+    low, midpoint, high = np.quantile(samples, (0.02, 0.50, 0.98))
+    if high - low < 0.06:
+        return np.asarray(
+            np.rint(np.clip(source_alpha, 0.0, 1.0) * 255.0), dtype=np.uint8
+        )
+    lower = np.maximum(midpoint - low, 0.04)
+    upper = np.maximum(high - midpoint, 0.04)
+    distance = np.where(
+        lightness <= midpoint,
+        (midpoint - lightness) / lower,
+        (lightness - midpoint) / upper,
+    )
+    distance = np.clip(distance, 0.0, 1.0)
+    # A small plateau keeps the dominant body solid; details then become
+    # progressively transparent and remain visible against any chat theme.
+    detail = np.clip((distance - 0.08) / 0.92, 0.0, 1.0)
+    mask = 1.0 - detail * detail * (3.0 - 2.0 * detail)
+    output = np.clip(source_alpha * mask, 0.0, 1.0)
+    return np.asarray(np.rint(output * 255.0), dtype=np.uint8)
+
+
 def recolor_rgb(
     rgb: NDArray[np.uint8] | FloatArray,
     target: ParsedColor | tuple[int, int, int],

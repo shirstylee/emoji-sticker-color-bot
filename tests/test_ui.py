@@ -10,6 +10,7 @@ from aiogram.methods import EditMessageText
 
 from app.i18n.en import EN
 from app.i18n.ru import RU
+from app.keyboards.admin import admin_keyboard
 from app.keyboards.user import (
     color_keyboard,
     language_keyboard,
@@ -33,8 +34,9 @@ def registry() -> PremiumEmojiRegistry:
 
 def test_language_keyboard_uses_real_flag_ids(registry: PremiumEmojiRegistry) -> None:
     keyboard = language_keyboard(registry)
+    assert len(keyboard.inline_keyboard) == 1
     assert keyboard.inline_keyboard[0][0].icon_custom_emoji_id == "5449408995691341691"
-    assert keyboard.inline_keyboard[1][0].icon_custom_emoji_id == "5202021044105257611"
+    assert keyboard.inline_keyboard[0][1].icon_custom_emoji_id == "5202021044105257611"
 
 
 def test_main_menu_has_exactly_three_actions_and_blue_primary(
@@ -101,12 +103,13 @@ def test_rich_messages_render_with_real_premium_emoji(
         "count": 1,
         "formats": "TGS: 1",
         "color": "#2196F3",
+        "pack_list": "Example pack",
         **registry.placeholders(),
     }
     expected_icon_counts = {
         "main_menu": 3,
         "send_source": 5,
-        "my_packs": 3,
+        "my_packs": 2,
         "information": 3,
         "source_found": 6,
         "choose_output": 2,
@@ -122,8 +125,17 @@ def test_rich_messages_render_with_real_premium_emoji(
             assert rendered.count("<tg-emoji ") == expected_count
 
     assert "Отправьте материал для перекраски" in RU["send_source"]
+    assert RU["send_source"].startswith("<blockquote>")
+    assert RU["send_source"].endswith("</blockquote>")
     assert "Premium Emoji — отдельным сообщением" in RU["send_source"]
     assert "Стикер — отдельным сообщением" in RU["send_source"]
+
+
+def test_admin_panel_has_back_to_main_menu(registry: PremiumEmojiRegistry) -> None:
+    keyboard = admin_keyboard(registry, owner=True)
+    back = keyboard.inline_keyboard[-1][0]
+    assert back.text == "Назад"
+    assert back.callback_data == "admin:close"
 
 
 def test_bot_commands_are_localized_without_slash_labels() -> None:

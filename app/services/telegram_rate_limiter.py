@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
@@ -80,6 +81,11 @@ class TelegramStickerRateController:
                 self.last_retry_after = delay
                 if self.on_flood:
                     await self.on_flood(delay)
-                if on_flood:
-                    await on_flood(delay)
-                await cancellation_aware_sleep(delay, cancel_event)
+                deadline = time.monotonic() + delay
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    if on_flood:
+                        await on_flood(float(math.ceil(remaining)))
+                    await cancellation_aware_sleep(min(1.0, remaining), cancel_event)

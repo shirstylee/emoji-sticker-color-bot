@@ -126,6 +126,10 @@ async def build_context(settings: Settings, bot: Bot, bot_username: str) -> AppC
         media_groups=MediaGroupCollector(),
         limits=limits,
         errors=ErrorBuffer(),
+        languages={
+            user_id: await database.admin_language(user_id)
+            for user_id, _role in await database.list_admins()
+        },
     )
 
     async def timeout_notification(runtime_job: RuntimeJob) -> None:

@@ -25,5 +25,5 @@ def admin_keyboard(registry: PremiumEmojiRegistry, *, owner: bool) -> InlineKeyb
     if owner:
         rows.insert(3, [button("ADMIN", "Администраторы", "admins")])
     rows.append([button("MAGIC", "Premium Emoji", "premium")])
+    rows.append([button("BACK", "Назад", "close")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
-

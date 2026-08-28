@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ class Database:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._connection: aiosqlite.Connection | None = None
+        self._admin_settings_lock = asyncio.Lock()
 
     async def open(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -47,7 +49,9 @@ class Database:
                 role TEXT NOT NULL CHECK(role IN ('owner', 'admin')),
                 added_at TEXT NOT NULL,
                 added_by INTEGER NULL,
-                is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1))
+                is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+                language TEXT NOT NULL DEFAULT 'ru',
+                created_packs_json TEXT NOT NULL DEFAULT '[]'
             );
 
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -72,7 +76,39 @@ class Database:
             );
             """
         )
+        await self._ensure_columns(
+            "admins",
+            {
+                "language": "TEXT NOT NULL DEFAULT 'ru'",
+                "created_packs_json": "TEXT NOT NULL DEFAULT '[]'",
+            },
+        )
+        await self._ensure_columns(
+            "aggregate_statistics",
+            {
+                "jobs_total": "INTEGER NOT NULL DEFAULT 0",
+                "jobs_success": "INTEGER NOT NULL DEFAULT 0",
+                "jobs_failed": "INTEGER NOT NULL DEFAULT 0",
+                "items_processed": "INTEGER NOT NULL DEFAULT 0",
+                "tgs_processed": "INTEGER NOT NULL DEFAULT 0",
+                "webm_processed": "INTEGER NOT NULL DEFAULT 0",
+                "raster_processed": "INTEGER NOT NULL DEFAULT 0",
+                "emoji_packs_created": "INTEGER NOT NULL DEFAULT 0",
+                "sticker_packs_created": "INTEGER NOT NULL DEFAULT 0",
+                "telegram_429": "INTEGER NOT NULL DEFAULT 0",
+                "processing_ms_total": "INTEGER NOT NULL DEFAULT 0",
+            },
+        )
         await self.connection.commit()
+
+    async def _ensure_columns(self, table: str, columns: Mapping[str, str]) -> None:
+        cursor = await self.connection.execute(f"PRAGMA table_info({table})")
+        existing = {str(row["name"]) for row in await cursor.fetchall()}
+        for name, declaration in columns.items():
+            if name not in existing:
+                await self.connection.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {name} {declaration}"
+                )
 
     async def ensure_owner(self, owner_id: int) -> None:
         now = datetime.now(UTC).isoformat()
@@ -128,6 +164,73 @@ class Database:
         await self.connection.commit()
         return cursor.rowcount > 0
 
+    async def admin_language(self, telegram_user_id: int) -> str:
+        cursor = await self.connection.execute(
+            "SELECT language FROM admins WHERE telegram_user_id=? AND is_active=1",
+            (telegram_user_id,),
+        )
+        row = await cursor.fetchone()
+        language = str(row["language"]) if row else "ru"
+        return language if language in {"ru", "en"} else "ru"
+
+    async def set_admin_language(self, telegram_user_id: int, language: str) -> None:
+        if language not in {"ru", "en"}:
+            raise ValueError("Unsupported administrator language")
+        await self.connection.execute(
+            "UPDATE admins SET language=? WHERE telegram_user_id=? AND is_active=1",
+            (language, telegram_user_id),
+        )
+        await self.connection.commit()
+
+    async def admin_packs(self, telegram_user_id: int) -> list[dict[str, str]]:
+        cursor = await self.connection.execute(
+            "SELECT created_packs_json FROM admins WHERE telegram_user_id=? AND is_active=1",
+            (telegram_user_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return []
+        try:
+            payload = json.loads(str(row["created_packs_json"]))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return []
+        if not isinstance(payload, list):
+            return []
+        result: list[dict[str, str]] = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            clean = {
+                key: str(item[key])
+                for key in ("title", "url", "kind", "created_at")
+                if key in item
+            }
+            if clean.get("title") and clean.get("url"):
+                result.append(clean)
+        return result
+
+    async def add_admin_packs(
+        self, telegram_user_id: int, packs: Sequence[Mapping[str, str]]
+    ) -> None:
+        if not packs:
+            return
+        async with self._admin_settings_lock:
+            existing = await self.admin_packs(telegram_user_id)
+            for pack in packs:
+                clean = {
+                    key: str(pack[key])
+                    for key in ("title", "url", "kind", "created_at")
+                    if key in pack
+                }
+                if clean.get("title") and clean.get("url"):
+                    existing.append(clean)
+            await self.connection.execute(
+                "UPDATE admins SET created_packs_json=? "
+                "WHERE telegram_user_id=? AND is_active=1",
+                (json.dumps(existing, ensure_ascii=False), telegram_user_id),
+            )
+            await self.connection.commit()
+
     async def get_setting(self, key: str, default: Any = None) -> Any:
         cursor = await self.connection.execute("SELECT value FROM app_settings WHERE key=?", (key,))
         row = await cursor.fetchone()
@@ -180,7 +283,11 @@ class Database:
         row = await cursor.fetchone()
         if row is None:
             return {}
-        return {key: int(row[key]) for key in row if key != "date"}
+        result: dict[str, int] = {}
+        for key in row.keys():  # noqa: SIM118 - aiosqlite.Row iterates values, not keys
+            if key != "date":
+                result[key] = int(row[key])
+        return result
 
     async def table_names(self) -> set[str]:
         cursor = await self.connection.execute(
