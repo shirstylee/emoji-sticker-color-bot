@@ -29,6 +29,7 @@ class SourceItem:
     index: int
     path: Path
     format: MediaFormat
+    preview_path: Path | None = None
     emoji_list: tuple[str, ...] = ("🎨",)
     original_name: str | None = None
     custom_emoji_id: str | None = None
@@ -49,4 +50,3 @@ class SourceDescriptor:
         for item in self.items:
             result[item.format] = result.get(item.format, 0) + 1
         return result
-

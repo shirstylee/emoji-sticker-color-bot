@@ -7,9 +7,13 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from app.config import Settings
+from app.models.job import OutputType
+from app.models.source import MediaFormat, SourceItem
 from app.recolor.color_math import parse_color
 from app.recolor.raster import fit_transparent, recolor_raster_file
 from app.recolor.webm import ffmpeg_executable, probe_webm, recolor_webm_file
+from app.services.pipeline import ProcessingPipeline
 
 
 def test_raster_output_dimensions_and_aspect_padding(tmp_path: Path) -> None:
@@ -33,6 +37,40 @@ def test_fit_transparent_custom_emoji() -> None:
     assert result.size == (100, 100)
     assert result.getpixel((50, 0))[3] == 0
     assert result.getpixel((50, 50))[3] == 255
+
+
+@pytest.mark.asyncio
+async def test_tgs_preview_uses_static_thumbnail_instead_of_raw_unknown_file(
+    tmp_path: Path,
+) -> None:
+    class ImmediateScheduler:
+        async def submit(self, _kind: object, operation: object, **_: object) -> Path:
+            return await operation()  # type: ignore[operator]
+
+    thumbnail = tmp_path / "source" / "001_preview.jpg"
+    thumbnail.parent.mkdir(parents=True)
+    Image.new("RGB", (64, 64), (240, 160, 20)).save(thumbnail)
+    item = SourceItem(
+        index=1,
+        path=tmp_path / "source" / "001.tgs",
+        format=MediaFormat.TGS,
+        preview_path=thumbnail,
+    )
+    job = type(
+        "PreviewJob",
+        (),
+        {
+            "root": tmp_path,
+            "selected_color": "#2196F3",
+            "output_type": OutputType.EMOJI_PACK,
+            "is_admin": False,
+        },
+    )()
+    pipeline = ProcessingPipeline(Settings(), ImmediateScheduler())  # type: ignore[arg-type]
+    result = await pipeline.process_item(job, item, preview=True)  # type: ignore[arg-type]
+    assert result.suffix == ".png"
+    with Image.open(result) as preview:
+        assert preview.format == "PNG"
 
 
 @pytest.mark.asyncio
@@ -73,4 +111,3 @@ async def test_streaming_webm_pipeline(tmp_path: Path) -> None:
     assert output.width <= 100 and output.height <= 100
     assert output.fps <= 30
     assert destination.stat().st_size > 0
-

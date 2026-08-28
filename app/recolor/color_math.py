@@ -152,11 +152,26 @@ def gamut_map_oklab(lab: FloatArray, iterations: int = 10) -> FloatArray:
     return result
 
 
+def palette_lightness_midpoint(
+    colors: list[list[float]] | list[tuple[float, ...]],
+) -> float:
+    """Return one stable OKLab lightness midpoint for a vector/TGS color palette."""
+
+    if not colors:
+        return 0.5
+    normalized = np.asarray([color[:3] for color in colors], dtype=np.float64)
+    if normalized.max(initial=0.0) > 1.0:
+        normalized /= 255.0
+    lightness = srgb_to_oklab(np.clip(normalized, 0.0, 1.0))[..., 0]
+    return float(np.clip(np.median(lightness), 0.08, 0.92))
+
+
 def recolor_rgb(
     rgb: NDArray[np.uint8] | FloatArray,
     target: ParsedColor | tuple[int, int, int],
     *,
     weights: FloatArray | None = None,
+    source_midpoint: float | None = None,
 ) -> NDArray[np.uint8]:
     """Remove source hue while retaining perceptual lightness and local contrast."""
 
@@ -168,12 +183,15 @@ def recolor_rgb(
         normalized /= 255.0
     source_lab = srgb_to_oklab(np.clip(normalized, 0.0, 1.0))
     source_l = source_lab[..., 0]
-    visible = source_l.reshape(-1)
-    if weights is not None:
-        flat_weights = np.asarray(weights, dtype=np.float64).reshape(-1)
-        visible = visible[flat_weights > 0.01]
-    midpoint = float(np.median(visible)) if visible.size else 0.5
-    midpoint = float(np.clip(midpoint, 0.08, 0.92))
+    if source_midpoint is None:
+        visible = source_l.reshape(-1)
+        if weights is not None:
+            flat_weights = np.asarray(weights, dtype=np.float64).reshape(-1)
+            visible = visible[flat_weights > 0.01]
+        midpoint = float(np.median(visible)) if visible.size else 0.5
+        midpoint = float(np.clip(midpoint, 0.08, 0.92))
+    else:
+        midpoint = float(np.clip(source_midpoint, 0.08, 0.92))
 
     target_rgb = target.rgb if isinstance(target, ParsedColor) else target
     target_normalized = np.array(target_rgb, dtype=np.float64) / 255.0
@@ -196,10 +214,18 @@ def recolor_rgb(
 
 
 def recolor_normalized_color(
-    color: list[float] | tuple[float, ...], target: ParsedColor
+    color: list[float] | tuple[float, ...],
+    target: ParsedColor,
+    *,
+    source_midpoint: float | None = None,
 ) -> list[float]:
     if len(color) < 3:
         return list(color)
     source = np.array(color[:3], dtype=np.float64).reshape(1, 1, 3)
-    recolored = recolor_rgb(source, target).reshape(3).astype(np.float64) / 255.0
+    recolored = (
+        recolor_rgb(source, target, source_midpoint=source_midpoint)
+        .reshape(3)
+        .astype(np.float64)
+        / 255.0
+    )
     return [*recolored.tolist(), *list(color[3:])]

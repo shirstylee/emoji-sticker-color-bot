@@ -21,6 +21,7 @@ from app.recolor.raster import recolor_raster_file
 from app.recolor.tgs import recolor_tgs_file
 from app.recolor.webm import optimize_webm
 from app.services.scheduler import JobScheduler, WorkKind
+from app.validators.output import validate_processed_output
 
 ProgressCallback = Callable[[int, int], Awaitable[None]]
 
@@ -51,6 +52,38 @@ class ProcessingPipeline:
         directory = job.root / ("preview" if preview else "processed")
         destination = directory / f"{item.index:03d}{output_extension(item, output_type)}"
         custom_emoji = output_type == OutputType.EMOJI_PACK
+        pack_custom = (
+            custom_emoji
+            if output_type in {OutputType.EMOJI_PACK, OutputType.STICKER_PACK}
+            else None
+        )
+        if preview and item.preview_path is not None:
+            preview_source = item.preview_path
+            destination = directory / f"{item.index:03d}.png"
+
+            async def thumbnail_operation() -> Path:
+                return await asyncio.to_thread(
+                    recolor_raster_file,
+                    preview_source,
+                    destination,
+                    target,
+                    custom_emoji=None,
+                    max_dimension=self.settings.max_raster_dimension,
+                    max_pixels=self.settings.max_raster_pixels,
+                )
+
+            result = await self.scheduler.submit(
+                WorkKind.PREVIEW,
+                thumbnail_operation,
+                is_admin=job.is_admin,
+            )
+            await validate_processed_output(
+                result,
+                expected=MediaFormat.PNG,
+                pack_custom=None,
+                max_tgs_decompressed=self.settings.max_tgs_json,
+            )
+            return result
         if item.format == MediaFormat.TGS:
 
             async def tgs_operation() -> Path:
@@ -66,11 +99,18 @@ class ProcessingPipeline:
                     raise ValueError("TGS exceeds Telegram's compact-file limit")
                 return result
 
-            return await self.scheduler.submit(
+            result = await self.scheduler.submit(
                 WorkKind.PREVIEW if preview else WorkKind.TGS,
                 tgs_operation,
                 is_admin=job.is_admin,
             )
+            await validate_processed_output(
+                result,
+                expected=MediaFormat.TGS,
+                pack_custom=pack_custom,
+                max_tgs_decompressed=self.settings.max_tgs_json,
+            )
+            return result
         if item.format == MediaFormat.WEBM:
             side = TELEGRAM_CUSTOM_EMOJI_SIDE if custom_emoji else TELEGRAM_REGULAR_STICKER_SIDE
 
@@ -85,12 +125,19 @@ class ProcessingPipeline:
                     timeout=self.settings.ffmpeg_timeout_seconds,
                 )
 
-            return await self.scheduler.submit(
+            result = await self.scheduler.submit(
                 WorkKind.WEBM,
                 webm_operation,
                 is_admin=job.is_admin,
                 heavy=True,
             )
+            await validate_processed_output(
+                result,
+                expected=MediaFormat.WEBM,
+                pack_custom=pack_custom,
+                max_tgs_decompressed=self.settings.max_tgs_json,
+            )
+            return result
 
         async def raster_operation() -> Path:
             return await asyncio.to_thread(
@@ -108,11 +155,18 @@ class ProcessingPipeline:
                 else None,
             )
 
-        return await self.scheduler.submit(
+        result = await self.scheduler.submit(
             WorkKind.PREVIEW if preview else WorkKind.RASTER,
             raster_operation,
             is_admin=job.is_admin,
         )
+        await validate_processed_output(
+            result,
+            expected=item.format,
+            pack_custom=pack_custom,
+            max_tgs_decompressed=self.settings.max_tgs_json,
+        )
+        return result
 
     async def process_all(
         self, job: RuntimeJob, progress: ProgressCallback | None = None
@@ -136,7 +190,9 @@ class ProcessingPipeline:
                 except Exception as current_error:
                     error = current_error
             if path is None or error is not None:
-                reason = type(error).__name__ if error else "ProcessingError"
+                reason = str(error).strip() if error else "Processing failed"
+                if not reason:
+                    reason = type(error).__name__ if error else "Processing failed"
                 job.errors.append((item.index, reason))
                 continue
             output.append((item, path))

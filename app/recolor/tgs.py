@@ -8,7 +8,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.recolor.color_math import ParsedColor, recolor_normalized_color
+from app.recolor.color_math import (
+    ParsedColor,
+    palette_lightness_midpoint,
+    recolor_normalized_color,
+)
 
 
 class TgsError(ValueError):
@@ -41,7 +45,7 @@ def validate_tgs_document(document: dict[str, Any]) -> None:
         duration = (float(document["op"]) - float(document["ip"])) / frame_rate
     except (TypeError, ValueError, ZeroDivisionError) as error:
         raise TgsError("TGS timing is invalid") from error
-    if frame_rate <= 0 or frame_rate > 60 or duration <= 0 or duration > 3.01:
+    if frame_rate != 60 or duration <= 0 or duration > 3.01:
         raise TgsError("TGS timing exceeds Telegram requirements")
     if int(document["w"]) != 512 or int(document["h"]) != 512:
         raise TgsError("Telegram TGS canvas must be 512x512")
@@ -56,20 +60,22 @@ def _is_color(value: object) -> bool:
     )
 
 
-def _recolor_color_payload(value: Any, target: ParsedColor) -> Any:
+def _recolor_color_payload(value: Any, target: ParsedColor, midpoint: float) -> Any:
     if _is_color(value):
-        return recolor_normalized_color(value, target)
+        return recolor_normalized_color(value, target, source_midpoint=midpoint)
     if isinstance(value, list):
-        return [_recolor_color_payload(item, target) for item in value]
+        return [_recolor_color_payload(item, target, midpoint) for item in value]
     return value
 
 
-def _recolor_property(prop: dict[str, Any], target: ParsedColor) -> None:
+def _recolor_property(prop: dict[str, Any], target: ParsedColor, midpoint: float) -> None:
     if "k" not in prop:
         return
     keyframes = prop["k"]
     if _is_color(keyframes):
-        prop["k"] = recolor_normalized_color(keyframes, target)
+        prop["k"] = recolor_normalized_color(
+            keyframes, target, source_midpoint=midpoint
+        )
         return
     if isinstance(keyframes, list):
         for frame in keyframes:
@@ -77,10 +83,12 @@ def _recolor_property(prop: dict[str, Any], target: ParsedColor) -> None:
                 continue
             for name in ("s", "e"):
                 if name in frame:
-                    frame[name] = _recolor_color_payload(frame[name], target)
+                    frame[name] = _recolor_color_payload(frame[name], target, midpoint)
 
 
-def _recolor_gradient_array(values: list[Any], points: int, target: ParsedColor) -> list[Any]:
+def _recolor_gradient_array(
+    values: list[Any], points: int, target: ParsedColor, midpoint: float
+) -> list[Any]:
     result = list(values)
     color_length = min(len(result), points * 4)
     for start in range(0, color_length, 4):
@@ -88,19 +96,25 @@ def _recolor_gradient_array(values: list[Any], points: int, target: ParsedColor)
             break
         channels = result[start + 1 : start + 4]
         if _is_color(channels):
-            result[start + 1 : start + 4] = recolor_normalized_color(channels, target)[:3]
+            result[start + 1 : start + 4] = recolor_normalized_color(
+                channels, target, source_midpoint=midpoint
+            )[:3]
     return result
 
 
-def _recolor_gradient_payload(value: Any, points: int, target: ParsedColor) -> Any:
+def _recolor_gradient_payload(
+    value: Any, points: int, target: ParsedColor, midpoint: float
+) -> Any:
     if isinstance(value, list) and value and all(isinstance(item, (int, float)) for item in value):
-        return _recolor_gradient_array(value, points, target)
+        return _recolor_gradient_array(value, points, target, midpoint)
     if isinstance(value, list):
-        return [_recolor_gradient_payload(item, points, target) for item in value]
+        return [_recolor_gradient_payload(item, points, target, midpoint) for item in value]
     return value
 
 
-def _recolor_gradient(gradient: dict[str, Any], target: ParsedColor) -> None:
+def _recolor_gradient(
+    gradient: dict[str, Any], target: ParsedColor, midpoint: float
+) -> None:
     points = gradient.get("p")
     prop = gradient.get("k")
     if not isinstance(points, int) or points <= 0 or not isinstance(prop, dict):
@@ -109,34 +123,114 @@ def _recolor_gradient(gradient: dict[str, Any], target: ParsedColor) -> None:
     if isinstance(keyframes, list) and keyframes and all(
         isinstance(item, (int, float)) for item in keyframes
     ):
-        prop["k"] = _recolor_gradient_array(keyframes, points, target)
+        prop["k"] = _recolor_gradient_array(keyframes, points, target, midpoint)
     elif isinstance(keyframes, list):
         for frame in keyframes:
             if not isinstance(frame, dict):
                 continue
             for name in ("s", "e"):
                 if name in frame:
-                    frame[name] = _recolor_gradient_payload(frame[name], points, target)
+                    frame[name] = _recolor_gradient_payload(
+                        frame[name], points, target, midpoint
+                    )
 
 
-def _walk(value: Any, target: ParsedColor) -> None:
+def _collect_color_payload(value: Any, colors: list[list[float]]) -> None:
+    if _is_color(value):
+        colors.append([float(channel) for channel in value[:3]])
+    elif isinstance(value, list):
+        for item in value:
+            _collect_color_payload(item, colors)
+
+
+def _collect_property(prop: dict[str, Any], colors: list[list[float]]) -> None:
+    if "k" not in prop:
+        return
+    keyframes = prop["k"]
+    if _is_color(keyframes):
+        colors.append([float(channel) for channel in keyframes[:3]])
+    elif isinstance(keyframes, list):
+        for frame in keyframes:
+            if not isinstance(frame, dict):
+                continue
+            for name in ("s", "e"):
+                if name in frame:
+                    _collect_color_payload(frame[name], colors)
+
+
+def _collect_gradient_array(values: list[Any], points: int, colors: list[list[float]]) -> None:
+    color_length = min(len(values), points * 4)
+    for start in range(0, color_length, 4):
+        if start + 3 >= len(values):
+            break
+        channels = values[start + 1 : start + 4]
+        if _is_color(channels):
+            colors.append([float(channel) for channel in channels])
+
+
+def _collect_gradient_payload(value: Any, points: int, colors: list[list[float]]) -> None:
+    if isinstance(value, list) and value and all(isinstance(item, (int, float)) for item in value):
+        _collect_gradient_array(value, points, colors)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_gradient_payload(item, points, colors)
+
+
+def _collect_gradient(gradient: dict[str, Any], colors: list[list[float]]) -> None:
+    points = gradient.get("p")
+    prop = gradient.get("k")
+    if not isinstance(points, int) or points <= 0 or not isinstance(prop, dict):
+        return
+    keyframes = prop.get("k")
+    if isinstance(keyframes, list) and keyframes and all(
+        isinstance(item, (int, float)) for item in keyframes
+    ):
+        _collect_gradient_array(keyframes, points, colors)
+    elif isinstance(keyframes, list):
+        for frame in keyframes:
+            if not isinstance(frame, dict):
+                continue
+            for name in ("s", "e"):
+                if name in frame:
+                    _collect_gradient_payload(frame[name], points, colors)
+
+
+def _collect_walk(value: Any, colors: list[list[float]]) -> None:
     if isinstance(value, dict):
         color = value.get("c")
         if isinstance(color, dict):
-            _recolor_property(color, target)
+            _collect_property(color, colors)
         gradient = value.get("g")
         if isinstance(gradient, dict):
-            _recolor_gradient(gradient, target)
+            _collect_gradient(gradient, colors)
         for child in value.values():
-            _walk(child, target)
+            _collect_walk(child, colors)
     elif isinstance(value, list):
         for child in value:
-            _walk(child, target)
+            _collect_walk(child, colors)
+
+
+def _walk(value: Any, target: ParsedColor, midpoint: float) -> None:
+    if isinstance(value, dict):
+        color = value.get("c")
+        if isinstance(color, dict):
+            _recolor_property(color, target, midpoint)
+        gradient = value.get("g")
+        if isinstance(gradient, dict):
+            _recolor_gradient(gradient, target, midpoint)
+        for child in value.values():
+            _walk(child, target, midpoint)
+    elif isinstance(value, list):
+        for child in value:
+            _walk(child, target, midpoint)
 
 
 def recolor_tgs_document(document: dict[str, Any], target: ParsedColor) -> dict[str, Any]:
     output = copy.deepcopy(document)
-    _walk(output, target)
+    colors: list[list[float]] = []
+    _collect_walk(output, colors)
+    midpoint = palette_lightness_midpoint(colors)
+    _walk(output, target, midpoint)
     return output
 
 

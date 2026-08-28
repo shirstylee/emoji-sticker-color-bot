@@ -195,7 +195,7 @@ async def admin_callback(
             f"Publishing: {'active' if context.scheduler.accepting else 'stopping'}\n"
             f"Conservative limiter: {'ON' if context.telegram_limiter.enabled else 'OFF'}\n"
             f"Last retry_after: {context.telegram_limiter.last_retry_after or '—'}\n"
-            "Bot API target: 9.5"
+            "Bot API target: 10.3"
         )
         markup = InlineKeyboardMarkup(
             inline_keyboard=[

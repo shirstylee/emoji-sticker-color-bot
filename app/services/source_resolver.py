@@ -15,7 +15,12 @@ from app.config import Settings
 from app.models.job import RuntimeJob
 from app.models.source import MediaFormat, SourceDescriptor, SourceItem, SourceKind
 from app.services.archive import extract_zip
-from app.services.telegram_files import download_document, download_sticker, sticker_extension
+from app.services.telegram_files import (
+    download_document,
+    download_sticker,
+    download_thumbnail,
+    sticker_extension,
+)
 from app.services.unicode_emoji import extract_single_emoji, render_emoji
 from app.validators.common import detect_format
 
@@ -53,12 +58,15 @@ def sticker_format(sticker: Sticker) -> MediaFormat:
     return MediaFormat.WEBP
 
 
-def _source_item(sticker: Sticker, path: Path, index: int) -> SourceItem:
+def _source_item(
+    sticker: Sticker, path: Path, index: int, preview_path: Path | None = None
+) -> SourceItem:
     association = (sticker.emoji,) if sticker.emoji else ("🎨",)
     return SourceItem(
         index=index,
         path=path,
         format=sticker_format(sticker),
+        preview_path=preview_path,
         emoji_list=association,
         custom_emoji_id=sticker.custom_emoji_id,
         needs_repainting=bool(sticker.needs_repainting),
@@ -88,7 +96,19 @@ async def resolve_pack(
                     raise SourceError(
                         "Telegram sticker content does not match its declared format"
                     )
-                items.append(_source_item(sticker, path, index))
+                preview_path: Path | None = None
+                if sticker.thumbnail is not None:
+                    try:
+                        preview_path = await download_thumbnail(
+                            bot,
+                            sticker.thumbnail,
+                            source_dir,
+                            index,
+                            settings.max_input_download,
+                        )
+                    except (OSError, ValueError):
+                        preview_path = None
+                items.append(_source_item(sticker, path, index, preview_path))
                 error = None
                 break
             except (OSError, ValueError) as current_error:
@@ -115,9 +135,21 @@ async def resolve_sticker(
     if detect_format(path) != sticker_format(sticker):
         raise SourceError("Sticker content signature is invalid")
     kind = SourceKind.CUSTOM_EMOJI if sticker.type == "custom_emoji" else SourceKind.STICKER
+    preview_path: Path | None = None
+    if sticker.thumbnail is not None:
+        try:
+            preview_path = await download_thumbnail(
+                bot,
+                sticker.thumbnail,
+                job.root / "source",
+                1,
+                settings.max_input_download,
+            )
+        except (OSError, ValueError):
+            preview_path = None
     return SourceDescriptor(
         kind=kind,
-        items=[_source_item(sticker, path, 1)],
+        items=[_source_item(sticker, path, 1, preview_path)],
         title="Custom Emoji" if kind == SourceKind.CUSTOM_EMOJI else "Sticker",
         sticker_type=sticker.type,
     )
@@ -144,9 +176,29 @@ async def resolve_document(
     if path.suffix.lower() == ".zip":
         # ZIP has no short magic branch in detect_format, so direct documents are checked here.
         raise SourceError("ZIP signature was not recognized")
+    preview_path: Path | None = None
+    if message.document.thumbnail is not None:
+        try:
+            preview_path = await download_thumbnail(
+                bot,
+                message.document.thumbnail,
+                job.root / "source",
+                1,
+                settings.max_input_download,
+            )
+        except (OSError, ValueError):
+            preview_path = None
     return SourceDescriptor(
         kind=SourceKind.FILE,
-        items=[SourceItem(index=1, path=path, format=actual, original_name=message.document.file_name)],
+        items=[
+            SourceItem(
+                index=1,
+                path=path,
+                format=actual,
+                preview_path=preview_path,
+                original_name=message.document.file_name,
+            )
+        ],
         title="File",
     )
 
@@ -194,11 +246,24 @@ async def resolve_media_group(
             path = await download_document(
                 bot, message.document, job.root / "source", index, settings.max_input_download
             )
+            preview_path: Path | None = None
+            if message.document.thumbnail is not None:
+                try:
+                    preview_path = await download_thumbnail(
+                        bot,
+                        message.document.thumbnail,
+                        job.root / "source",
+                        index,
+                        settings.max_input_download,
+                    )
+                except (OSError, ValueError):
+                    preview_path = None
             items.append(
                 SourceItem(
                     index=index,
                     path=path,
                     format=detect_format(path),
+                    preview_path=preview_path,
                     original_name=message.document.file_name,
                 )
             )

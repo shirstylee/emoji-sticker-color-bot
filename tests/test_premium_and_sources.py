@@ -19,6 +19,8 @@ def test_real_premium_registry_is_loaded_from_main_txt() -> None:
         emoji_id = registry.button_id(semantic)
         assert emoji_id is not None and emoji_id.isdecimal()
     assert registry.icon("COLOR").custom_emoji_id == "5769635757211784031"
+    assert registry.button_id("FLAG_RU") == "5449408995691341691"
+    assert registry.button_id("FLAG_EN") == "5202021044105257611"
 
 
 @pytest.mark.parametrize(

@@ -42,5 +42,6 @@ class AppContext:
     limits: LimitsConfig
     errors: ErrorBuffer = field(default_factory=ErrorBuffer)
     languages: dict[int, str] = field(default_factory=dict)
+    menu_messages: dict[int, tuple[int, int]] = field(default_factory=dict)
     started_monotonic: float = field(default_factory=time.monotonic)
     shutdown_requested: bool = False

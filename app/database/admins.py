@@ -11,10 +11,12 @@ class AdminService:
         self.owner_id = owner_id
 
     async def is_admin(self, user_id: int) -> bool:
-        return await self.database.is_admin(user_id)
+        # OWNER_ID is the authoritative recovery path even if the SQLite row was
+        # removed, copied from another deployment, or has not been migrated yet.
+        return user_id == self.owner_id or await self.database.is_admin(user_id)
 
     async def is_owner(self, user_id: int) -> bool:
-        return user_id == self.owner_id and await self.database.admin_role(user_id) == "owner"
+        return user_id == self.owner_id
 
     async def add(self, actor_id: int, target_id: int) -> None:
         if not await self.is_owner(actor_id):
@@ -27,4 +29,3 @@ class AdminService:
         if target_id == self.owner_id:
             return False
         return await self.database.remove_admin(target_id)
-

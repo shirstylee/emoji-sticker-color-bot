@@ -11,13 +11,14 @@ from pathlib import Path
 
 import psutil
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from app.constants import TELEGRAM_CUSTOM_EMOJI_SET_MAX, TELEGRAM_REGULAR_STICKER_SET_MAX
 from app.context import AppContext
 from app.database.settings import maintenance_enabled
 from app.database.statistics import record_job_result
-from app.handlers.commands import current_language
+from app.handlers.commands import current_language, show_main_menu
 from app.i18n import text
 from app.keyboards.user import (
     adaptive_preview_keyboard,
@@ -25,6 +26,7 @@ from app.keyboards.user import (
     output_keyboard,
     pack_name_keyboard,
     preview_keyboard,
+    processing_keyboard,
     result_keyboard,
     split_keyboard,
 )
@@ -43,6 +45,7 @@ from app.services.source_resolver import (
 from app.services.telegram_stickers import pack_url
 from app.services.unicode_emoji import extract_single_emoji
 from app.services.user_rate_limiter import RateLimitExceeded, classify_job
+from app.validators.common import detect_format
 
 LOGGER = logging.getLogger(__name__)
 router = Router(name="workflow")
@@ -84,13 +87,16 @@ async def _send_source_card(message: Message, job: RuntimeJob, context: AppConte
         count=job.total,
         formats=_format_summary(job),
     )
+    previous_menu = context.menu_messages.pop(job.user_id, None)
+    if previous_menu is not None:
+        with contextlib.suppress(Exception):
+            await context.bot.delete_message(previous_menu[0], previous_menu[1])
     sent = await context.ui.answer(
         message,
         body,
         reply_markup=color_keyboard(
             context.premium,
             job.job_id,
-            context.settings.color_picker_url,
             adaptive=True,
             language=job.language,
         ),
@@ -177,6 +183,9 @@ async def _accept_source(
         job.status = JobStatus.AWAITING_COLOR
         job.total = len(source.items) + len(job.errors)
         await _send_source_card(message, job, context)
+        for source_message in media_messages or [message]:
+            with contextlib.suppress(Exception):
+                await source_message.delete()
     except (SourceError, ValueError, OSError) as error:
         context.errors.add(job_id=job.job_id, component="source", error=error)
         safe_error(LOGGER, "source", error, job.job_id)
@@ -217,7 +226,11 @@ async def private_message(message: Message, context: AppContext) -> None:
             await _handle_pack_name(message, job, context)
             return
         await context.ui.answer(
-            message, f'{context.premium.html("WARNING")} {text(job.language, "busy")}'
+            message,
+            f'{context.premium.html("WARNING")} {text(job.language, "busy")}',
+            reply_markup=processing_keyboard(
+                context.premium, job.job_id, job.language
+            ),
         )
         return
     if message.media_group_id:
@@ -243,10 +256,21 @@ async def _send_preview(
     control: Message, job: RuntimeJob, path: Path, media_format: MediaFormat, context: AppContext
 ) -> None:
     await _delete_old_preview(job, context)
+    if media_format == MediaFormat.TGS and path.suffix.lower() == ".tgs":
+        return
+    filename = f"preview{path.suffix.lower()}"
     if media_format == MediaFormat.PNG:
-        preview = await control.answer_photo(FSInputFile(path))
+        preview = await control.answer_photo(FSInputFile(path, filename=filename))
     else:
-        preview = await control.answer_sticker(FSInputFile(path))
+        try:
+            preview = await control.answer_sticker(FSInputFile(path, filename=filename))
+        except TelegramBadRequest as error:
+            if "wrong file type" not in str(error).lower():
+                raise
+            preview = await control.answer_document(
+                FSInputFile(path, filename=filename),
+                disable_content_type_detection=True,
+            )
     job.preview_message_id = preview.message_id
 
 
@@ -293,7 +317,10 @@ async def _select_color(
     for preview_item in job.source.items:
         try:
             path = await context.pipeline.process_item(job, preview_item, preview=True)
-            await _send_preview(control, job, path, preview_item.format, context)
+            preview_format = (
+                MediaFormat.PNG if path.suffix.lower() == ".png" else preview_item.format
+            )
+            await _send_preview(control, job, path, preview_format, context)
             preview_error = None
             break
         except Exception as error:
@@ -333,14 +360,29 @@ async def _handle_color_text(message: Message, job: RuntimeJob, context: AppCont
                     done=0,
                     total=max(1, job.total),
                 ),
+                reply_markup=processing_keyboard(
+                    context.premium, job.job_id, job.language
+                ),
             )
             if isinstance(edited, Message):
                 control = edited
         except Exception:
             control = None
     if control is None:
-        control = await message.answer("…")
+        control = await context.ui.answer(
+            message,
+            text(
+                job.language,
+                "processing",
+                icon=context.premium.html("LOADING"),
+                done=0,
+                total=max(1, job.total),
+            ),
+            reply_markup=processing_keyboard(context.premium, job.job_id, job.language),
+        )
         job.control_message_id = control.message_id
+    with contextlib.suppress(Exception):
+        await message.delete()
     await _select_color(control, job, message.text or "", context)
 
 
@@ -367,7 +409,43 @@ async def _handle_pack_name(message: Message, job: RuntimeJob, context: AppConte
         )
         return
     job.pack_title = title
-    await _start_processing(message, job, context)
+    control: Message | None = None
+    if job.control_message_id is not None:
+        try:
+            edited = await context.bot.edit_message_text(
+                chat_id=job.chat_id,
+                message_id=job.control_message_id,
+                text=text(
+                    job.language,
+                    "processing",
+                    icon=context.premium.html("LOADING"),
+                    done=0,
+                    total=max(1, job.total),
+                ),
+                reply_markup=processing_keyboard(
+                    context.premium, job.job_id, job.language
+                ),
+            )
+            if isinstance(edited, Message):
+                control = edited
+        except Exception:
+            control = None
+    if control is None:
+        control = await context.ui.answer(
+            message,
+            text(
+                job.language,
+                "processing",
+                icon=context.premium.html("LOADING"),
+                done=0,
+                total=max(1, job.total),
+            ),
+            reply_markup=processing_keyboard(context.premium, job.job_id, job.language),
+        )
+        job.control_message_id = control.message_id
+    with contextlib.suppress(Exception):
+        await message.delete()
+    await _start_processing(control, job, context)
 
 
 async def _start_processing(control: Message, job: RuntimeJob, context: AppContext) -> None:
@@ -412,6 +490,9 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
                     done=done,
                     total=total,
                 ),
+                reply_markup=processing_keyboard(
+                    context.premium, job.job_id, job.language
+                ),
             )
         except Exception:
             return
@@ -421,7 +502,9 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
         outputs = await context.pipeline.process_all(job, progress)
         if job.output_type == OutputType.FILE:
             path = outputs[0][1]
-            await control.answer_document(FSInputFile(path))
+            await control.answer_document(
+                FSInputFile(path, filename=f"recolored{path.suffix.lower()}")
+            )
             await context.ui.edit(
                 control,
                 text(
@@ -460,9 +543,12 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
             processing_ms=round((time.monotonic() - started) * 1000),
         )
         with contextlib.suppress(Exception):
+            body = text(job.language, "service_error", icon=context.premium.html("ERROR"))
+            if job.errors:
+                body += "\n\n" + _error_summary(job)
             await context.ui.edit(
                 control,
-                text(job.language, "service_error", icon=context.premium.html("ERROR")),
+                body,
             )
     finally:
         await _delete_old_preview(job, context)
@@ -483,7 +569,7 @@ async def _deliver_zip(
         part_limit=context.settings.max_output_zip_part,
     )
     for part in parts:
-        await control.answer_document(FSInputFile(part))
+        await control.answer_document(FSInputFile(part, filename=part.name))
     body = text(
         job.language,
         "done_file",
@@ -513,6 +599,7 @@ async def _publish_packs(
     await context.ui.edit(
         control,
         text(job.language, "publishing", icon=context.premium.html("UPLOAD")),
+        reply_markup=processing_keyboard(context.premium, job.job_id, job.language),
     )
     groups = [outputs[index : index + maximum] for index in range(0, len(outputs), maximum)]
     links: list[str] = []
@@ -523,7 +610,7 @@ async def _publish_packs(
             suffix = f" — Part {index}"
             part_title = f"{title[: 64 - len(suffix)].rstrip()}{suffix}"
         files = [
-            (path, item.format, item.emoji_list)
+            (path, detect_format(path), item.emoji_list)
             for item, path in group
         ]
         async def on_flood(_: float) -> None:
@@ -531,6 +618,9 @@ async def _publish_packs(
                 await context.ui.edit(
                     control,
                     f'{context.premium.html("TIME")} {text(job.language, "flood_wait")}',
+                    reply_markup=processing_keyboard(
+                        context.premium, job.job_id, job.language
+                    ),
                 )
             except Exception:
                 return
@@ -600,10 +690,7 @@ async def restart_callback(callback: CallbackQuery, context: AppContext) -> None
             callback.from_user.id,
             "ru" if (callback.from_user.language_code or "").startswith("ru") else "en",
         )
-        await context.ui.edit(
-            callback.message,
-            text(language, "start", icon=context.premium.html("BRUSH")),
-        )
+        await show_main_menu(callback.message, context, language)
 
 
 @router.callback_query(F.data.startswith("job:"))
@@ -621,6 +708,7 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
     job.touch()
     control = callback.message
     if action == "cancel":
+        job.request_cancel()
         await context.ui.edit(
             control,
             text(job.language, "cancelled", icon=context.premium.html("CANCEL")),
@@ -643,7 +731,6 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
             reply_markup=color_keyboard(
                 context.premium,
                 job.job_id,
-                context.settings.color_picker_url,
                 language=job.language,
             ),
         )
@@ -667,8 +754,11 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
         job.output_type = OutputType.EMOJI_PACK
         job.status = JobStatus.AWAITING_PREVIEW_DECISION
         if job.source:
+            item = job.source.items[0]
+            preview_path = item.preview_path or item.path
+            preview_format = MediaFormat.PNG if item.preview_path else item.format
             await _send_preview(
-                control, job, job.source.items[0].path, job.source.items[0].format, context
+                control, job, preview_path, preview_format, context
             )
         await context.ui.edit(
             control,

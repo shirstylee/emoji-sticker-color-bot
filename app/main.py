@@ -38,13 +38,20 @@ from app.services.user_rate_limiter import UserRateLimiter
 
 LOGGER = logging.getLogger(__name__)
 
-COMMANDS = [
-    BotCommand(command="start", description="Start / Начать"),
-    BotCommand(command="help", description="Help / Помощь"),
-    BotCommand(command="colors", description="Colors / Цвета"),
-    BotCommand(command="language", description="Language / Язык"),
-    BotCommand(command="cancel", description="Cancel / Отмена"),
-    BotCommand(command="privacy", description="Privacy / Приватность"),
+COMMANDS_RU = [
+    BotCommand(command="start", description="Начать"),
+    BotCommand(command="help", description="Помощь"),
+    BotCommand(command="colors", description="Цвета"),
+    BotCommand(command="language", description="Язык"),
+    BotCommand(command="cancel", description="Отмена"),
+]
+
+COMMANDS_EN = [
+    BotCommand(command="start", description="Start"),
+    BotCommand(command="help", description="Help"),
+    BotCommand(command="colors", description="Colors"),
+    BotCommand(command="language", description="Language"),
+    BotCommand(command="cancel", description="Cancel"),
 ]
 
 
@@ -158,7 +165,9 @@ async def run_bot() -> None:
         context = await build_context(settings, bot, identity.username)
         dispatcher = Dispatcher(storage=MemoryStorage())
         register_handlers(dispatcher)
-        await bot.set_my_commands(COMMANDS)
+        await bot.set_my_commands(COMMANDS_EN)
+        await bot.set_my_commands(COMMANDS_EN, language_code="en")
+        await bot.set_my_commands(COMMANDS_RU, language_code="ru")
         await dispatcher.start_polling(
             bot,
             context=context,

@@ -14,7 +14,11 @@ from app.constants import TELEGRAM_VIDEO_MAX_DURATION_SECONDS, TELEGRAM_VIDEO_MA
 from app.recolor.color_math import ParsedColor, recolor_rgb
 
 DURATION_RE = re.compile(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
-VIDEO_RE = re.compile(r"Video:.*?\b(\d{2,5})x(\d{2,5})\b.*?(\d+(?:\.\d+)?)\s*fps", re.DOTALL)
+VIDEO_RE = re.compile(
+    r"Video:\s*(?P<codec>[^,\s]+).*?\b(?P<width>\d{2,5})x(?P<height>\d{2,5})\b"
+    r".*?(?P<fps>\d+(?:\.\d+)?)\s*fps",
+    re.DOTALL,
+)
 
 
 class WebmError(ValueError):
@@ -27,6 +31,9 @@ class WebmInfo:
     height: int
     fps: float
     duration: float
+    codec: str
+    has_audio: bool
+    has_alpha: bool
 
 
 def ffmpeg_executable() -> Path:
@@ -70,8 +77,15 @@ async def probe_webm(path: Path, *, timeout: float = 20) -> WebmInfo:
         raise WebmError("FFmpeg could not identify the WEBM video stream")
     hours, minutes, seconds = duration_match.groups()
     duration = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
-    width, height, fps = video_match.groups()
-    return WebmInfo(int(width), int(height), float(fps), duration)
+    return WebmInfo(
+        width=int(video_match.group("width")),
+        height=int(video_match.group("height")),
+        fps=float(video_match.group("fps")),
+        duration=duration,
+        codec=video_match.group("codec").lower(),
+        has_audio=bool(re.search(r"Stream #[^\r\n]+:\s*Audio:", report)),
+        has_alpha="alpha_mode" in report or "yuva" in report,
+    )
 
 
 async def _stop_process(process: asyncio.subprocess.Process) -> None:

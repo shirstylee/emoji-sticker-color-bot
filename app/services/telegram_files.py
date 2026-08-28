@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from aiogram import Bot
-from aiogram.types import Document, Sticker
+from aiogram.types import Document, PhotoSize, Sticker
 
 
 class TelegramFileError(ValueError):
@@ -49,6 +49,18 @@ async def download_sticker(
         file_id=sticker.file_id,
         destination=destination_dir / f"{index:03d}{sticker_extension(sticker)}",
         declared_size=sticker.file_size,
+        maximum_bytes=maximum_bytes,
+    )
+
+
+async def download_thumbnail(
+    bot: Bot, thumbnail: PhotoSize, destination_dir: Path, index: int, maximum_bytes: int
+) -> Path:
+    return await download_telegram_file(
+        bot,
+        file_id=thumbnail.file_id,
+        destination=destination_dir / f"{index:03d}_preview.jpg",
+        declared_size=thumbnail.file_size,
         maximum_bytes=maximum_bytes,
     )
 

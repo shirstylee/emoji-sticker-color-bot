@@ -37,6 +37,10 @@ def premium_error(error: TelegramBadRequest) -> bool:
     )
 
 
+def message_not_modified(error: TelegramBadRequest) -> bool:
+    return "message is not modified" in str(error).lower()
+
+
 class SafeUI:
     def __init__(self, registry: PremiumEmojiRegistry) -> None:
         self.registry = registry
@@ -70,9 +74,16 @@ class SafeUI:
         try:
             return await message.edit_text(text, reply_markup=reply_markup, **kwargs)
         except TelegramBadRequest as error:
+            if message_not_modified(error):
+                return message
             if not premium_error(error):
                 raise
             self.registry.disable()
-            return await message.edit_text(
-                fallback_html(text), reply_markup=fallback_markup(reply_markup), **kwargs
-            )
+            try:
+                return await message.edit_text(
+                    fallback_html(text), reply_markup=fallback_markup(reply_markup), **kwargs
+                )
+            except TelegramBadRequest as fallback_error:
+                if message_not_modified(fallback_error):
+                    return message
+                raise

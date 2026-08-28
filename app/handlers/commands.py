@@ -10,7 +10,12 @@ from aiogram.types import CallbackQuery, Message
 
 from app.context import AppContext
 from app.i18n import language_for, text
-from app.keyboards.user import language_keyboard
+from app.keyboards.user import (
+    language_keyboard,
+    main_menu_keyboard,
+    menu_back_keyboard,
+    packs_keyboard,
+)
 
 router = Router(name="commands")
 
@@ -23,16 +28,45 @@ def current_language(message: Message, context: AppContext) -> str:
     )
 
 
+async def _delete_previous_menu(
+    context: AppContext, user_id: int, *, keep_message_id: int | None = None
+) -> None:
+    previous = context.menu_messages.pop(user_id, None)
+    if previous is None or previous[1] == keep_message_id:
+        return
+    with contextlib.suppress(Exception):
+        await context.bot.delete_message(previous[0], previous[1])
+
+
+async def show_main_menu(
+    message: Message, context: AppContext, language: str
+) -> Message | bool:
+    await _delete_previous_menu(context, message.chat.id, keep_message_id=message.message_id)
+    result = await context.ui.edit(
+        message,
+        text(language, "main_menu", icon=context.premium.html("BRUSH")),
+        reply_markup=main_menu_keyboard(context.premium, language),
+    )
+    context.menu_messages[message.chat.id] = (message.chat.id, message.message_id)
+    return result
+
+
 @router.message(CommandStart())
 async def start(message: Message, context: AppContext) -> None:
     if message.chat.type != "private":
         await message.answer("Open Emoji & Sticker Color Bot in a private chat.")
         return
-    language = current_language(message, context)
-    await context.ui.answer(
+    if message.from_user is None:
+        return
+    await _delete_previous_menu(context, message.from_user.id)
+    sent = await context.ui.answer(
         message,
-        text(language, "start", icon=context.premium.html("BRUSH")),
+        text("ru", "language_prompt", icon=context.premium.html("LANGUAGE")),
+        reply_markup=language_keyboard(context.premium),
     )
+    context.menu_messages[message.from_user.id] = (message.chat.id, sent.message_id)
+    with contextlib.suppress(Exception):
+        await message.delete()
 
 
 @router.message(Command("help"))
@@ -43,17 +77,6 @@ async def help_command(message: Message, context: AppContext) -> None:
     await context.ui.answer(
         message,
         text(language, "help", icon=context.premium.html("HELP")),
-    )
-
-
-@router.message(Command("privacy"))
-async def privacy_command(message: Message, context: AppContext) -> None:
-    if message.chat.type != "private":
-        return
-    language = current_language(message, context)
-    await context.ui.answer(
-        message,
-        text(language, "privacy", icon=context.premium.html("LOCK")),
     )
 
 
@@ -73,11 +96,14 @@ async def language_command(message: Message, context: AppContext) -> None:
     if message.chat.type != "private":
         return
     language = current_language(message, context)
-    await context.ui.answer(
+    sent = await context.ui.answer(
         message,
         text(language, "language", icon=context.premium.html("LANGUAGE")),
         reply_markup=language_keyboard(context.premium),
     )
+    if message.from_user is not None:
+        await _delete_previous_menu(context, message.from_user.id)
+        context.menu_messages[message.from_user.id] = (message.chat.id, sent.message_id)
 
 
 @router.callback_query(F.data.startswith("lang:"))
@@ -90,9 +116,41 @@ async def language_callback(callback: CallbackQuery, context: AppContext) -> Non
     context.languages[callback.from_user.id] = language
     await callback.answer()
     if isinstance(callback.message, Message):
+        await show_main_menu(callback.message, context, language)
+
+
+@router.callback_query(F.data.startswith("menu:"))
+async def menu_callback(callback: CallbackQuery, context: AppContext) -> None:
+    if callback.message is None or not isinstance(callback.message, Message):
+        return
+    language = context.languages.get(
+        callback.from_user.id, language_for(callback.from_user.language_code)
+    )
+    action = (callback.data or "").partition(":")[2]
+    await callback.answer()
+    context.menu_messages[callback.from_user.id] = (
+        callback.message.chat.id,
+        callback.message.message_id,
+    )
+    if action == "home":
+        await show_main_menu(callback.message, context, language)
+    elif action == "recolor":
         await context.ui.edit(
             callback.message,
-            text(language, "language_changed", icon=context.premium.html("SUCCESS")),
+            text(language, "send_source", icon=context.premium.html("UPLOAD")),
+            reply_markup=menu_back_keyboard(context.premium, language),
+        )
+    elif action == "packs":
+        await context.ui.edit(
+            callback.message,
+            text(language, "my_packs", icon=context.premium.html("PACK")),
+            reply_markup=packs_keyboard(context.premium, language),
+        )
+    elif action == "info":
+        await context.ui.edit(
+            callback.message,
+            text(language, "information", icon=context.premium.html("INFO")),
+            reply_markup=menu_back_keyboard(context.premium, language),
         )
 
 

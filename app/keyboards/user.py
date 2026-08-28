@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.services.premium_emoji import PremiumEmojiRegistry
 
 BUTTON_LABELS = {
     "ru": {
-        "picker": "Подобрать цвет",
         "adaptive": "Сделать Adaptive",
         "cancel": "Отмена",
         "continue": "Продолжить",
@@ -23,9 +22,13 @@ BUTTON_LABELS = {
         "restart": "Перекрасить ещё",
         "source_title": "Использовать название исходного",
         "split": "Разделить",
+        "main_recolor": "Покрасить эмодзи",
+        "my_packs": "Мои наборы",
+        "information": "Информация",
+        "open_stickers": "Открыть @Stickers",
+        "back": "Назад",
     },
     "en": {
-        "picker": "Pick a color",
         "adaptive": "Make Adaptive",
         "cancel": "Cancel",
         "continue": "Continue",
@@ -38,6 +41,11 @@ BUTTON_LABELS = {
         "restart": "Recolor another",
         "source_title": "Use source title",
         "split": "Split",
+        "main_recolor": "Recolor Emoji",
+        "my_packs": "My packs",
+        "information": "Information",
+        "open_stickers": "Open @Stickers",
+        "back": "Back",
     },
 }
 
@@ -62,8 +70,84 @@ def _button(
 def language_keyboard(registry: PremiumEmojiRegistry) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [_button(registry, "LANGUAGE", "Русский", callback_data="lang:ru")],
-            [_button(registry, "LANGUAGE", "English", callback_data="lang:en")],
+            [_button(registry, "FLAG_RU", "Русский", callback_data="lang:ru")],
+            [_button(registry, "FLAG_EN", "English", callback_data="lang:en")],
+        ]
+    )
+
+
+def main_menu_keyboard(
+    registry: PremiumEmojiRegistry, language: str = "en"
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    registry,
+                    "BRUSH",
+                    _label(language, "main_recolor"),
+                    callback_data="menu:recolor",
+                    style="primary",
+                )
+            ],
+            [
+                _button(
+                    registry,
+                    "PACK",
+                    _label(language, "my_packs"),
+                    callback_data="menu:packs",
+                )
+            ],
+            [
+                _button(
+                    registry,
+                    "INFO",
+                    _label(language, "information"),
+                    callback_data="menu:info",
+                )
+            ],
+        ]
+    )
+
+
+def menu_back_keyboard(
+    registry: PremiumEmojiRegistry, language: str = "en"
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    registry,
+                    "BACK",
+                    _label(language, "back"),
+                    callback_data="menu:home",
+                )
+            ]
+        ]
+    )
+
+
+def packs_keyboard(
+    registry: PremiumEmojiRegistry, language: str = "en"
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    registry,
+                    "PACK",
+                    _label(language, "open_stickers"),
+                    url="https://t.me/Stickers",
+                )
+            ],
+            [
+                _button(
+                    registry,
+                    "BACK",
+                    _label(language, "back"),
+                    callback_data="menu:home",
+                )
+            ],
         ]
     )
 
@@ -71,29 +155,11 @@ def language_keyboard(registry: PremiumEmojiRegistry) -> InlineKeyboardMarkup:
 def color_keyboard(
     registry: PremiumEmojiRegistry,
     job_id: str,
-    color_picker_url: str,
     *,
     adaptive: bool = True,
     language: str = "en",
 ) -> InlineKeyboardMarkup:
-    rows = [
-        [
-            _button(registry, "COLOR", "#FFFFFF", callback_data=f"job:{job_id}:color:FFFFFF"),
-            _button(registry, "COLOR", "#000000", callback_data=f"job:{job_id}:color:000000"),
-        ],
-        [
-            _button(registry, "COLOR", "#FF0000", callback_data=f"job:{job_id}:color:FF0000"),
-            _button(registry, "COLOR", "#2196F3", callback_data=f"job:{job_id}:color:2196F3"),
-        ],
-        [
-            _button(
-                registry,
-                "COLOR",
-                _label(language, "picker"),
-                web_app=WebAppInfo(url=color_picker_url),
-            )
-        ],
-    ]
+    rows: list[list[InlineKeyboardButton]] = []
     if adaptive:
         rows.append(
             [
@@ -116,6 +182,24 @@ def color_keyboard(
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def processing_keyboard(
+    registry: PremiumEmojiRegistry, job_id: str, language: str = "en"
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    registry,
+                    "CANCEL",
+                    _label(language, "cancel"),
+                    callback_data=f"job:{job_id}:cancel",
+                    style="danger",
+                )
+            ]
+        ]
+    )
 
 
 def preview_keyboard(

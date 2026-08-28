@@ -6,6 +6,27 @@ EN: dict[str, str] = {
         "Send a sticker, Custom Emoji, Unicode Emoji, file, or pack link.\n"
         "I will recolor it and prepare the result in the format you choose."
     ),
+    "language_prompt": "{icon} <b>Choose a language</b>\nВыберите язык",
+    "main_menu": (
+        "{icon} <b>I recolor Premium Emoji and stickers in any color</b>\n\n"
+        "Original outlines, lighting, shadows, and transparency are preserved.\n\n"
+        "Choose an action:"
+    ),
+    "send_source": (
+        "{icon} <b>Send material to recolor</b>\n\n"
+        "You can send a Premium Emoji, sticker, PNG, WEBP, TGS, WEBM, ZIP, "
+        "or a Telegram pack link."
+    ),
+    "my_packs": (
+        "{icon} <b>My packs</b>\n\n"
+        "The bot does not store user or pack history. You can manage packs you added "
+        "through the official @Stickers bot."
+    ),
+    "information": (
+        "{icon} <b>Emoji &amp; Sticker Color Bot</b>\n\n"
+        "Recolors Premium Emoji, stickers, and packs while preserving outlines, lighting, "
+        "shadows, and transparency. PNG, WEBP, TGS, WEBM, and ZIP are supported."
+    ),
     "help": (
         "{icon} <b>Emoji &amp; Sticker Color Bot — help</b>\n\n"
         "Send one sticker or Custom Emoji, a t.me/addstickers/… or t.me/addemoji/… link, "
@@ -14,20 +35,15 @@ EN: dict[str, str] = {
         "stickers. Adaptive is only for Custom Emoji and Telegram chooses its color. Unicode Emoji "
         "becomes a graphic PNG. ZIP preserves order and source formats."
     ),
-    "privacy": (
-        "{icon} <b>Privacy</b>\n\n"
-        "Regular Telegram IDs are used only in memory for the current operation and temporary rate "
-        "limits; they are not stored permanently. Usernames, names, request, color, and pack history "
-        "are not stored. Files are temporary and removed on success, error, timeout, or cancellation. "
-        "Technical statistics are anonymous. Administrator records are stored in SQLite solely for "
-        "admin-panel access control."
-    ),
     "colors": (
         "{icon} <b>Colors</b>\n\n"
-        "#FFFFFF — White\n#000000 — Black\n#FF0000 — Red\n#FF9800 — Orange\n"
-        "#FFEB3B — Yellow\n#4CAF50 — Green\n#03A9F4 — Light blue\n#2196F3 — Blue\n"
-        "#9C27B0 — Purple\n#E91E63 — Pink\n\n"
-        "Formats: #FF00AA, F0A, rgb(255, 0, 170), 255, 0, 170."
+        "<code>#FFFFFF</code> — White\n<code>#000000</code> — Black\n"
+        "<code>#FF0000</code> — Red\n<code>#FF9800</code> — Orange\n"
+        "<code>#FFEB3B</code> — Yellow\n<code>#4CAF50</code> — Green\n"
+        "<code>#03A9F4</code> — Light blue\n<code>#2196F3</code> — Blue\n"
+        "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink\n\n"
+        "Formats: <code>#FF00AA</code>, <code>F0A</code>, "
+        "<code>rgb(255, 0, 170)</code>, <code>255, 0, 170</code>."
     ),
     "language": "{icon} Choose a language:",
     "language_changed": "{icon} Language changed.",
@@ -42,14 +58,18 @@ EN: dict[str, str] = {
     "source_found": (
         "{icon} <b>Source found</b>\n\nTitle: {title}\nType: {kind}\nItems: {count}\n"
         "Formats:\n{formats}\n\n"
-        "#FFFFFF — White\n#000000 — Black\n#FF0000 — Red\n#FF9800 — Orange\n"
-        "#FFEB3B — Yellow\n#4CAF50 — Green\n#03A9F4 — Light blue\n#2196F3 — Blue\n"
-        "#9C27B0 — Purple\n#E91E63 — Pink\n\n"
-        "Choose a color below or send HEX/RGB.\n"
-        "Copy a code from the picker site and send it to the bot."
+        "<code>#FFFFFF</code> — White\n<code>#000000</code> — Black\n"
+        "<code>#FF0000</code> — Red\n<code>#FF9800</code> — Orange\n"
+        "<code>#FFEB3B</code> — Yellow\n<code>#4CAF50</code> — Green\n"
+        "<code>#03A9F4</code> — Light blue\n<code>#2196F3</code> — Blue\n"
+        "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink\n\n"
+        "Tap a code to copy it and send it to the bot. You can also send HEX/RGB manually."
     ),
-    "invalid_color": "Color not recognized. Example: #8B5CF6 or rgb(139, 92, 246).",
-    "choose_output": "{icon} Color {color} accepted. Choose an output:",
+    "invalid_color": (
+        "Color not recognized. Example: <code>#8B5CF6</code> "
+        "or <code>rgb(139, 92, 246)</code>."
+    ),
+    "choose_output": "{icon} Color <code>{color}</code> accepted. Choose an output:",
     "preview_ready": "{icon} A preview of the first item is ready. Continue?",
     "adaptive_preview": (
         "{icon} The shape is ready. Telegram chooses the actual Adaptive Emoji color based on "
@@ -61,10 +81,10 @@ EN: dict[str, str] = {
     "processing": "{icon} Recoloring…\n{done} / {total}",
     "publishing": "{icon} Files are ready. Uploading items to Telegram…",
     "flood_wait": "Telegram temporarily limited the upload speed. It will continue automatically.",
-    "done_file": "{icon} Done. Color: {color}",
+    "done_file": "{icon} Done. Color: <code>{color}</code>",
     "done_pack": (
         "{icon} <b>Pack ready</b>\n\nTitle: {title}\nType: {kind}\n"
-        "Items: {count}\nColor: {color}"
+        "Items: {count}\nColor: <code>{color}</code>"
     ),
     "partial": "Done: {done} / {total}\nFailed: {failed}",
     "file_too_large": "The file is too large.",

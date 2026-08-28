@@ -1,4 +1,4 @@
-"""Centralized external format and Telegram Bot API 9.5 limits."""
+"""Centralized external format and Telegram Bot API limits."""
 
 from __future__ import annotations
 
@@ -21,4 +21,3 @@ TELEGRAM_PACK_TITLE_MAX = 64
 SUPPORTED_EXTENSIONS = frozenset({".tgs", ".webm", ".webp", ".png"})
 IGNORED_ARCHIVE_NAMES = frozenset({".ds_store", "thumbs.db", "__macosx"})
 DEFAULT_ASSOCIATED_EMOJI = "🎨"
-

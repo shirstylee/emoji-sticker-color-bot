@@ -21,24 +21,51 @@ def extract_single_emoji(value: str) -> str | None:
     return str(clusters[0])
 
 
+def _render_with_font_size(grapheme: str, font_path: Path, font_size: int) -> Image.Image:
+    """Render one grapheme, including fixed-strike color fonts used on Linux."""
+
+    font = ImageFont.truetype(str(font_path), font_size)
+    probe = Image.new("RGBA", (font_size * 5, font_size * 5), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(probe)
+    box = draw.textbbox((0, 0), grapheme, font=font, embedded_color=True)
+    width = max(1, round(box[2] - box[0]))
+    height = max(1, round(box[3] - box[1]))
+    glyph = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    glyph_draw = ImageDraw.Draw(glyph)
+    glyph_draw.text((-box[0], -box[1]), grapheme, font=font, embedded_color=True)
+    if glyph.getbbox() is None:
+        raise ValueError("Emoji font produced an empty glyph")
+    return glyph
+
+
 def render_emoji(value: str, destination: Path, font_path: Path | None, side: int = 512) -> Path:
     grapheme = extract_single_emoji(value)
     if grapheme is None:
         raise EmojiRenderError("Input is not one Unicode emoji grapheme")
     if font_path is None or not font_path.is_file():
         raise EmojiRenderError("Color Emoji font is not configured")
+    # Noto Color Emoji on common Linux distributions is a bitmap color font with
+    # one or a few fixed strikes. Scalable fonts accept the first size; fixed fonts
+    # fall through to their native sizes and are resized only after rendering.
+    sizes = [int(side * 0.72), 160, 136, 128, 109, 96, 72, 64]
+    glyph: Image.Image | None = None
+    last_error: Exception | None = None
+    for font_size in dict.fromkeys(sizes):
+        try:
+            glyph = _render_with_font_size(grapheme, font_path, font_size)
+            break
+        except (OSError, ValueError) as error:
+            last_error = error
+    if glyph is None:
+        raise EmojiRenderError("The configured Emoji font cannot render this emoji") from last_error
+
+    maximum = max(1, int(side * 0.82))
+    scale = min(maximum / glyph.width, maximum / glyph.height)
+    size = (max(1, round(glyph.width * scale)), max(1, round(glyph.height * scale)))
+    if glyph.size != size:
+        glyph = glyph.resize(size, Image.Resampling.LANCZOS)
     canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    try:
-        font = ImageFont.truetype(str(font_path), int(side * 0.72))
-        draw = ImageDraw.Draw(canvas)
-        box = draw.textbbox((0, 0), grapheme, font=font, embedded_color=True)
-        x = (side - (box[2] - box[0])) // 2 - box[0]
-        y = (side - (box[3] - box[1])) // 2 - box[1]
-        draw.text((x, y), grapheme, font=font, embedded_color=True)
-    except (OSError, ValueError) as error:
-        raise EmojiRenderError("The configured Emoji font cannot render this emoji") from error
-    if canvas.getbbox() is None:
-        raise EmojiRenderError("The configured Emoji font produced an empty image")
+    canvas.alpha_composite(glyph, ((side - glyph.width) // 2, (side - glyph.height) // 2))
     destination.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(destination, "PNG", optimize=True)
     return destination

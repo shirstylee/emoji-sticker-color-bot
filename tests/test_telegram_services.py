@@ -7,8 +7,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.database.admins import AdminService
 from app.handlers.admin import admin_command
 from app.models.source import MediaFormat
+from app.services.premium_emoji import PremiumEmojiRegistry
 from app.services.telegram_rate_limiter import TelegramStickerRateController
 from app.services.telegram_stickers import StickerPublisher, generate_short_name, pack_url
 
@@ -121,3 +123,32 @@ async def test_admin_command_is_silent_for_regular_user() -> None:
     await admin_command(message, context)  # type: ignore[arg-type]
     message.answer.assert_not_awaited()
 
+
+@pytest.mark.asyncio
+async def test_configured_owner_is_authoritative_without_database_row() -> None:
+    database = SimpleNamespace(is_admin=AsyncMock(return_value=False))
+    admins = AdminService(database, owner_id=777)  # type: ignore[arg-type]
+
+    assert await admins.is_admin(777)
+    assert await admins.is_owner(777)
+    database.is_admin.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_admin_command_answers_configured_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = SimpleNamespace(is_admin=AsyncMock(return_value=False))
+    context = SimpleNamespace(
+        admins=AdminService(database, owner_id=777),  # type: ignore[arg-type]
+        premium=PremiumEmojiRegistry.load(Path("Main.txt")),
+        ui=SimpleNamespace(answer=AsyncMock()),
+    )
+    message = SimpleNamespace(from_user=SimpleNamespace(id=777))
+    dashboard = AsyncMock(return_value="admin dashboard")
+    monkeypatch.setattr("app.handlers.admin._dashboard", dashboard)
+
+    await admin_command(message, context)  # type: ignore[arg-type]
+
+    context.ui.answer.assert_awaited_once()
+    assert context.ui.answer.await_args.args[1] == "admin dashboard"

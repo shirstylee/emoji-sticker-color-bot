@@ -19,7 +19,6 @@ class Settings(BaseSettings):
 
     bot_token: str = ""
     owner_id: int = 0
-    color_picker_url: str = "https://htmlcolorcodes.com/color-picker/"
     database_path: Path = Path("data/bot.db")
     temp_root: Path = Path("temp/jobs")
     premium_emoji_path: Path = Path("Main.txt")
@@ -99,4 +98,3 @@ def discover_emoji_font(configured: Path | None = None) -> Path | None:
             ]
         )
     return next((path.resolve() for path in candidates if path.is_file()), None)
-
