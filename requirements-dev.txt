@@ -1,0 +1,8 @@
+-r requirements.txt
+mypy==2.3.1
+pytest==9.1.1
+pytest-asyncio==1.4.0
+ruff==0.16.5
+types-aiofiles==25.1.0.20260518
+types-psutil==7.2.2.20260827
+types-regex==2026.7.19.20260720

@@ -1,0 +1,25 @@
+[Unit]
+Description=Emoji & Sticker Color Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=emoji-bot
+Group=emoji-bot
+WorkingDirectory=/opt/emoji-sticker-color-bot
+EnvironmentFile=/opt/emoji-sticker-color-bot/.env
+ExecStart=/opt/emoji-sticker-color-bot/.venv/bin/python -m app.main
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/emoji-sticker-color-bot/data /opt/emoji-sticker-color-bot/temp /opt/emoji-sticker-color-bot/logs
+
+[Install]
+WantedBy=multi-user.target
+

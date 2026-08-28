@@ -1,0 +1,255 @@
+<p align="center">
+  <img src="assets/images/readme_banner.png" alt="Emoji & Sticker Color Bot banner" width="100%" />
+</p>
+
+<h1 align="center">🎨 Emoji & Sticker Color Bot</h1>
+
+<p align="center">
+  Перцептивная перекраска Telegram Emoji, стикеров, наборов и файлов<br />
+  с сохранением света, теней, контуров, градиентов и прозрачности
+</p>
+
+<p align="center">
+  <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" />
+  <img alt="aiogram 3.31" src="https://img.shields.io/badge/aiogram-3.31-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
+  <img alt="Telegram Bot API 9.5" src="https://img.shields.io/badge/Bot_API-9.5-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
+  <img alt="Tests: 78 passed" src="https://img.shields.io/badge/tests-78%20passed-2EA44F?style=flat-square" />
+  <img alt="Languages: RU and EN" src="https://img.shields.io/badge/languages-RU%20%7C%20EN-7C3AED?style=flat-square" />
+</p>
+
+---
+
+## 🌈 Что это за бот
+
+**Emoji & Sticker Color Bot** перекрашивает отдельные Custom Emoji и стикеры, целые Telegram-наборы, изображения, анимации и архивы в выбранный цвет.
+
+Цвет меняется в перцептивном пространстве **OKLab**: бот сохраняет яркость исходника, светотень, фактуру, контуры, градиенты и alpha-канал, поэтому результат не выглядит как плоская цветная заливка.
+
+Поддерживаются:
+
+- 🖼️ статические стикеры и изображения — `WEBP`, `PNG`;
+- ✨ анимированные стикеры — `TGS`;
+- 🎬 видеостикеры — `WEBM`;
+- 📦 наборы и пакетная обработка — Telegram Pack, media group, `ZIP`;
+- 😀 составные Unicode Emoji и Adaptive Emoji;
+- 🌍 интерфейс на русском и английском языках.
+
+---
+
+## ✨ Возможности
+
+- 🎨 **Умная перекраска** — сохранение исходной светимости и прозрачности через linear sRGB и OKLab.
+- 🧩 **Один элемент или целый набор** — поддержка стикеров, Custom Emoji, pack-ссылок, файлов, архивов и альбомов.
+- 🌀 **Нативные форматы Telegram** — безопасная работа с TGS, WEBM, WEBP и PNG без подмены форматов.
+- 📦 **Гибкий результат** — новый Emoji Pack, Sticker Pack, исходный файл или ZIP-архив.
+- 🌈 **Любой цвет** — HEX, RGB, короткие HEX-значения и названия базовых цветов.
+- 💎 **Premium Emoji в интерфейсе** — используются реальные Custom Emoji ID из `Main.txt` с автоматическим Unicode fallback.
+- 🚦 **Контроль нагрузки** — очередь задач, отдельные лимиты тяжёлых операций, обработка Telegram `retry_after` и отмена без перезапуска job.
+- 🧹 **Автоочистка** — временные файлы удаляются после успеха, ошибки, отмены, таймаута и при следующем запуске.
+- 🔐 **Приватность по умолчанию** — пользовательские ID, история, тексты, файлы и названия наборов не сохраняются в базе.
+- 🤖 **Telegram-only админ-панель** — мониторинг состояния, агрегированной статистики, лимитов, ошибок и Premium Emoji.
+
+---
+
+## 🔄 Как это работает
+
+1. 📤 Отправьте боту стикер, Custom Emoji, файл, media group, ZIP или ссылку на Telegram-набор.
+2. 🎯 Выберите цвет кнопкой, через color picker или отправьте HEX/RGB вручную.
+3. 👀 Посмотрите превью и при необходимости скорректируйте цвет.
+4. 📦 Выберите формат результата: новый набор, файл или архив.
+5. ✅ Получите готовый результат — исходные Telegram-наборы никогда не изменяются.
+
+Если большой набор не помещается в один Telegram pack, бот сначала запросит согласие на разбиение.
+
+---
+
+## 🧠 Обработка форматов
+
+| Формат | Что делает бот |
+|---|---|
+| `PNG` / `WEBP` | Векторизованная NumPy-обработка, OKLab, сохранение alpha и perceptual gamut mapping |
+| `TGS` | Безопасный разбор gzip JSON, перекраска fill/stroke, animated colors и gradients с сохранением неизвестных Lottie-полей |
+| `WEBM` | Потоковый FFmpeg decode → recolor → VP9/alpha encode без накопления всех кадров в RAM |
+| `ZIP` | Проверка traversal, абсолютных путей, symlink, nested archives, размера, числа файлов и compression ratio |
+| Unicode Emoji | Проверка одного grapheme cluster и локальный рендер системным Color Emoji font |
+
+Статический стикер получает прозрачный canvas `512×512`, Custom Emoji — `100×100`, а TGS сохраняет `512×512`. WEBM кодируется в VP9 без аудио, не более 30 FPS и 3 секунд.
+
+---
+
+## 🏗️ Архитектура
+
+```text
+app/
+├── handlers/       # Telegram-команды, пользовательский flow и /admin
+├── keyboards/      # централизованные Premium Emoji-aware клавиатуры
+├── services/       # jobs, источники, очередь, лимиты, архивы, публикация
+├── recolor/        # OKLab raster, Lottie/TGS и streaming WEBM
+├── validators/     # сигнатуры и безопасная проверка медиа/ZIP
+├── database/       # разрешённая privacy-first SQLite-схема
+├── models/         # RAM-only jobs/sources и лимиты
+├── i18n/           # русская и английская локализация
+├── config.py       # окружение и динамические настройки workers
+├── constants.py    # лимиты Telegram Bot API и медиа
+└── main.py         # диагностика, polling и graceful shutdown
+```
+
+CPU-heavy операции выполняются через ограниченный `asyncio.to_thread`, а WEBM использует отдельный semaphore. Планировщик даёт админским задачам повышенный приоритет и приостанавливает новые тяжёлые операции при нехватке RAM или места на диске.
+
+---
+
+## 🔒 Приватность
+
+SQLite содержит только три таблицы:
+
+- `admins` — owner и администраторы для контроля доступа;
+- `app_settings` — неперсональные runtime-настройки;
+- `aggregate_statistics` — обезличенные дневные счётчики.
+
+Бот **не хранит** таблицы пользователей, историю запросов, Telegram file ID, Custom Emoji ID, тексты сообщений, имена файлов или наборов. Эти данные живут только в RAM до завершения задачи или перезапуска.
+
+Логи проходят sanitizing filter и не содержат Bot Token, Telegram ID, Update payload и пользовательский контент.
+
+---
+
+## 🛡️ Безопасность
+
+- 🔑 секреты загружаются из локального `.env`, который исключён из Git;
+- 🤫 неавторизованный `/admin` не отвечает и не создаёт запись в логах;
+- 🚫 архивы защищены от path traversal, symlink и zip bombs;
+- 📏 размеры, длительность, разрешение и сигнатуры медиа проверяются до тяжёлой обработки;
+- 🧯 временные данные изолированы по случайному job ID и гарантированно очищаются;
+- ⏱️ rate limits и Telegram 429 обрабатываются без потери состояния задачи.
+
+---
+
+## 🧰 Технологии
+
+| Область | Решение |
+|---|---|
+| Telegram | `aiogram 3.31.0`, Telegram Bot API 9.5 |
+| Runtime | Python 3.12+, `asyncio`, `pydantic-settings` |
+| Изображения | NumPy, Pillow, linear sRGB, OKLab |
+| Анимация | Lottie/TGS, `imageio-ffmpeg`, VP9/alpha |
+| Хранилище | SQLite / `aiosqlite`, только обезличенные данные |
+| Валидация | сигнатуры файлов, Pillow, FFmpeg probe, safe ZIP extraction |
+| Качество | Ruff, mypy, pytest |
+| Развёртывание | `.venv`, `.env`, hardened systemd unit |
+
+---
+
+## 🚀 Быстрый запуск
+
+### Windows
+
+Все Python-зависимости устанавливаются только в проектную `.venv`:
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
+.venv\Scripts\python.exe -m pip install -r requirements.lock
+Copy-Item .env.example .env
+```
+
+Заполните `.env`, затем запустите диагностику и бота:
+
+```powershell
+.venv\Scripts\python.exe -m app.main --check
+.venv\Scripts\python.exe -m app.main
+```
+
+### Linux / VPS
+
+Windows-окружение нельзя переносить на Linux — создайте `.venv` заново:
+
+```bash
+cd /opt/emoji-sticker-color-bot
+python3.12 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip setuptools wheel
+.venv/bin/python -m pip install -r requirements.lock
+cp .env.example .env
+.venv/bin/python -m app.main --check
+.venv/bin/python -m app.main
+```
+
+Готовый hardened unit находится в `deploy/emoji-sticker-color-bot.service`:
+
+```bash
+sudo cp deploy/emoji-sticker-color-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now emoji-sticker-color-bot
+```
+
+---
+
+## ⚙️ Конфигурация
+
+Минимальный `.env`:
+
+```env
+BOT_TOKEN=123456:replace_me
+OWNER_ID=123456789
+```
+
+Основные пути:
+
+```env
+DATABASE_PATH=data/bot.db
+TEMP_ROOT=temp/jobs
+PREMIUM_EMOJI_PATH=Main.txt
+EMOJI_FONT_PATH=
+LOG_DIR=logs
+```
+
+Полный список лимитов и настроек с безопасными значениями по умолчанию находится в `.env.example`.
+
+`COLOR_PICKER_URL` открывается как Telegram WebApp. По умолчанию используется внешний picker: пользователь копирует HEX/RGB и отправляет значение боту.
+
+---
+
+## 💎 Premium Emoji
+
+При запуске бот полностью читает `Main.txt` и принимает только реальные 16–20-значные ID из правой части строк. Семантические действия (`SUCCESS`, `COLOR`, `CANCEL`, `PACK`, `ADMIN` и другие) сопоставляются по описанию — raw ID не дублируются в handlers и клавиатурах.
+
+Если нужного ID нет или Telegram отклоняет `custom_emoji` / `icon_custom_emoji_id`, интерфейс автоматически повторяется с обычным Unicode Emoji. Диагностика доступна в `/admin → Premium Emoji`.
+
+---
+
+## 🤖 Команды
+
+Пользовательские команды:
+
+- `/start` — начать работу;
+- `/help` — инструкция и поддерживаемые форматы;
+- `/colors` — примеры цветов;
+- `/language` — русский или английский;
+- `/cancel` — отменить текущую задачу;
+- `/privacy` — политика хранения данных.
+
+`/admin` доступна только owner и назначенным администраторам: uptime, jobs, workers, CPU/RAM/disk/temp, агрегированная статистика, Telegram 429, лимиты, ошибки, maintenance mode, Premium Emoji и управление администраторами.
+
+---
+
+## ✅ Проверка проекта
+
+Offline-диагностика не требует Bot Token:
+
+```powershell
+.venv\Scripts\python.exe -m app.main --check
+```
+
+Полный quality gate:
+
+```powershell
+.venv\Scripts\python.exe -m ruff check .
+.venv\Scripts\python.exe -m mypy app
+.venv\Scripts\python.exe -m pytest
+```
+
+Тесты покрывают парсинг цветов, OKLab/alpha/contrast, TGS, WEBM, ZIP security, лимиты, RAM-only jobs, очистку, Telegram 429, silent `/admin`, privacy-схему базы и ключевые workflow-компоненты.
+
+---
+
+<p align="center">
+  <strong>🎨 Один цвет — для любого Emoji, стикера или набора ✨</strong>
+</p>
