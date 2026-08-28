@@ -13,8 +13,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand
+from aiogram.fsm.storage.memory import MemoryStorage, SimpleEventIsolation
+from aiogram.types import BotCommand, BotCommandScopeChat
 
 from app.config import Settings, discover_emoji_font
 from app.context import AppContext
@@ -42,16 +42,22 @@ COMMANDS_RU = [
     BotCommand(command="start", description="Начать"),
     BotCommand(command="help", description="Помощь"),
     BotCommand(command="colors", description="Цвета"),
-    BotCommand(command="language", description="Язык"),
     BotCommand(command="cancel", description="Отмена"),
 ]
 
-COMMANDS_EN = [
+ADMIN_COMMANDS_RU = [
+    *COMMANDS_RU,
+    BotCommand(command="language", description="Язык"),
+    BotCommand(command="admin", description="Админ-панель"),
+]
+
+ADMIN_COMMANDS_EN = [
     BotCommand(command="start", description="Start"),
     BotCommand(command="help", description="Help"),
     BotCommand(command="colors", description="Colors"),
-    BotCommand(command="language", description="Language"),
     BotCommand(command="cancel", description="Cancel"),
+    BotCommand(command="language", description="Language"),
+    BotCommand(command="admin", description="Admin panel"),
 ]
 
 
@@ -150,6 +156,28 @@ async def shutdown_context(context: AppContext) -> None:
     await context.database.close()
 
 
+async def configure_bot_commands(bot: Bot, context: AppContext) -> None:
+    # Ordinary users always see the Russian-only command set. Explicitly replace
+    # old EN command scopes left by earlier deployments.
+    await bot.set_my_commands(COMMANDS_RU)
+    await bot.set_my_commands(COMMANDS_RU, language_code="ru")
+    await bot.set_my_commands(COMMANDS_RU, language_code="en")
+    for user_id, _role in await context.database.list_admins():
+        scope = BotCommandScopeChat(chat_id=user_id)
+        try:
+            await bot.set_my_commands(ADMIN_COMMANDS_RU, scope=scope)
+            await bot.set_my_commands(
+                ADMIN_COMMANDS_RU, scope=scope, language_code="ru"
+            )
+            await bot.set_my_commands(
+                ADMIN_COMMANDS_EN, scope=scope, language_code="en"
+            )
+        except TelegramBadRequest:
+            # An administrator may not have opened the bot yet. This must never
+            # prevent polling or owner access from starting.
+            LOGGER.warning("Could not install a private admin command scope")
+
+
 async def run_bot() -> None:
     settings = load_settings()
     settings.validate_runtime()
@@ -163,11 +191,12 @@ async def run_bot() -> None:
         if not identity.username:
             raise RuntimeError("Bot username is required for sticker set short names")
         context = await build_context(settings, bot, identity.username)
-        dispatcher = Dispatcher(storage=MemoryStorage())
+        dispatcher = Dispatcher(
+            storage=MemoryStorage(),
+            events_isolation=SimpleEventIsolation(),
+        )
         register_handlers(dispatcher)
-        await bot.set_my_commands(COMMANDS_EN)
-        await bot.set_my_commands(COMMANDS_EN, language_code="en")
-        await bot.set_my_commands(COMMANDS_RU, language_code="ru")
+        await configure_bot_commands(bot, context)
         await dispatcher.start_polling(
             bot,
             context=context,

@@ -9,7 +9,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from app.context import AppContext
-from app.i18n import language_for, text
+from app.i18n import text
 from app.keyboards.user import (
     language_keyboard,
     main_menu_keyboard,
@@ -20,12 +20,14 @@ from app.keyboards.user import (
 router = Router(name="commands")
 
 
-def current_language(message: Message, context: AppContext) -> str:
+def current_language(
+    message: Message, context: AppContext, *, is_admin: bool = False
+) -> str:
     if message.from_user is None:
-        return "en"
-    return context.languages.get(
-        message.from_user.id, language_for(message.from_user.language_code)
-    )
+        return "ru"
+    if not is_admin:
+        return "ru"
+    return context.languages.get(message.from_user.id, "ru")
 
 
 async def _delete_previous_menu(
@@ -41,11 +43,20 @@ async def _delete_previous_menu(
 async def show_main_menu(
     message: Message, context: AppContext, language: str
 ) -> Message | bool:
+    is_admin = await context.admins.is_admin(message.chat.id)
+    if not is_admin:
+        language = "ru"
+        context.languages.pop(message.chat.id, None)
     await _delete_previous_menu(context, message.chat.id, keep_message_id=message.message_id)
     result = await context.ui.edit(
         message,
-        text(language, "main_menu", icon=context.premium.html("BRUSH")),
-        reply_markup=main_menu_keyboard(context.premium, language),
+        text(
+            language,
+            "main_menu",
+            icon=context.premium.html("BRUSH"),
+            **context.premium.placeholders(),
+        ),
+        reply_markup=main_menu_keyboard(context.premium, language, is_admin=is_admin),
     )
     context.menu_messages[message.chat.id] = (message.chat.id, message.message_id)
     return result
@@ -59,11 +70,25 @@ async def start(message: Message, context: AppContext) -> None:
     if message.from_user is None:
         return
     await _delete_previous_menu(context, message.from_user.id)
-    sent = await context.ui.answer(
-        message,
-        text("ru", "language_prompt", icon=context.premium.html("LANGUAGE")),
-        reply_markup=language_keyboard(context.premium),
-    )
+    is_admin = await context.admins.is_admin(message.from_user.id)
+    if is_admin:
+        sent = await context.ui.answer(
+            message,
+            text("ru", "language_prompt", icon=context.premium.html("LANGUAGE")),
+            reply_markup=language_keyboard(context.premium),
+        )
+    else:
+        context.languages.pop(message.from_user.id, None)
+        sent = await context.ui.answer(
+            message,
+            text(
+                "ru",
+                "main_menu",
+                icon=context.premium.html("BRUSH"),
+                **context.premium.placeholders(),
+            ),
+            reply_markup=main_menu_keyboard(context.premium, "ru", is_admin=False),
+        )
     context.menu_messages[message.from_user.id] = (message.chat.id, sent.message_id)
     with contextlib.suppress(Exception):
         await message.delete()
@@ -73,7 +98,10 @@ async def start(message: Message, context: AppContext) -> None:
 async def help_command(message: Message, context: AppContext) -> None:
     if message.chat.type != "private":
         return
-    language = current_language(message, context)
+    if message.from_user is None:
+        return
+    is_admin = await context.admins.is_admin(message.from_user.id)
+    language = current_language(message, context, is_admin=is_admin)
     await context.ui.answer(
         message,
         text(language, "help", icon=context.premium.html("HELP")),
@@ -84,7 +112,10 @@ async def help_command(message: Message, context: AppContext) -> None:
 async def colors_command(message: Message, context: AppContext) -> None:
     if message.chat.type != "private":
         return
-    language = current_language(message, context)
+    if message.from_user is None:
+        return
+    is_admin = await context.admins.is_admin(message.from_user.id)
+    language = current_language(message, context, is_admin=is_admin)
     await context.ui.answer(
         message,
         text(language, "colors", icon=context.premium.html("COLOR")),
@@ -95,7 +126,13 @@ async def colors_command(message: Message, context: AppContext) -> None:
 async def language_command(message: Message, context: AppContext) -> None:
     if message.chat.type != "private":
         return
-    language = current_language(message, context)
+    if message.from_user is None:
+        return
+    is_admin = await context.admins.is_admin(message.from_user.id)
+    if not is_admin:
+        context.languages.pop(message.from_user.id, None)
+        return
+    language = current_language(message, context, is_admin=True)
     sent = await context.ui.answer(
         message,
         text(language, "language", icon=context.premium.html("LANGUAGE")),
@@ -110,6 +147,12 @@ async def language_command(message: Message, context: AppContext) -> None:
 async def language_callback(callback: CallbackQuery, context: AppContext) -> None:
     if callback.from_user is None or callback.message is None:
         return
+    if not await context.admins.is_admin(callback.from_user.id):
+        context.languages.pop(callback.from_user.id, None)
+        await callback.answer()
+        if isinstance(callback.message, Message):
+            await show_main_menu(callback.message, context, "ru")
+        return
     language = (callback.data or "").partition(":")[2]
     if language not in {"ru", "en"}:
         return
@@ -123,9 +166,8 @@ async def language_callback(callback: CallbackQuery, context: AppContext) -> Non
 async def menu_callback(callback: CallbackQuery, context: AppContext) -> None:
     if callback.message is None or not isinstance(callback.message, Message):
         return
-    language = context.languages.get(
-        callback.from_user.id, language_for(callback.from_user.language_code)
-    )
+    is_admin = await context.admins.is_admin(callback.from_user.id)
+    language = context.languages.get(callback.from_user.id, "ru") if is_admin else "ru"
     action = (callback.data or "").partition(":")[2]
     await callback.answer()
     context.menu_messages[callback.from_user.id] = (
@@ -137,19 +179,37 @@ async def menu_callback(callback: CallbackQuery, context: AppContext) -> None:
     elif action == "recolor":
         await context.ui.edit(
             callback.message,
-            text(language, "send_source", icon=context.premium.html("UPLOAD")),
+            text(
+                language,
+                "send_source",
+                icon=context.premium.html("UPLOAD"),
+                **context.premium.placeholders(),
+            ),
             reply_markup=menu_back_keyboard(context.premium, language),
         )
     elif action == "packs":
+        if not is_admin:
+            await show_main_menu(callback.message, context, "ru")
+            return
         await context.ui.edit(
             callback.message,
-            text(language, "my_packs", icon=context.premium.html("PACK")),
+            text(
+                language,
+                "my_packs",
+                icon=context.premium.html("PACK"),
+                **context.premium.placeholders(),
+            ),
             reply_markup=packs_keyboard(context.premium, language),
         )
     elif action == "info":
         await context.ui.edit(
             callback.message,
-            text(language, "information", icon=context.premium.html("INFO")),
+            text(
+                language,
+                "information",
+                icon=context.premium.html("INFO"),
+                **context.premium.placeholders(),
+            ),
             reply_markup=menu_back_keyboard(context.premium, language),
         )
 
@@ -158,7 +218,8 @@ async def menu_callback(callback: CallbackQuery, context: AppContext) -> None:
 async def cancel_command(message: Message, context: AppContext) -> None:
     if message.from_user is None or message.chat.type != "private":
         return
-    language = current_language(message, context)
+    is_admin = await context.admins.is_admin(message.from_user.id)
+    language = current_language(message, context, is_admin=is_admin)
     jobs = sorted(context.jobs.for_user(message.from_user.id), key=lambda item: item.created_at)
     if not jobs:
         await context.ui.answer(

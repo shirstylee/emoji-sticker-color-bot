@@ -11,6 +11,7 @@ from pathlib import Path
 
 import psutil
 from aiogram import F, Router
+from aiogram.enums import MessageEntityType
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, FSInputFile, Message
 
@@ -86,6 +87,7 @@ async def _send_source_card(message: Message, job: RuntimeJob, context: AppConte
         kind=_job_kind(job),
         count=job.total,
         formats=_format_summary(job),
+        **context.premium.placeholders(),
     )
     previous_menu = context.menu_messages.pop(job.user_id, None)
     if previous_menu is not None:
@@ -97,6 +99,7 @@ async def _send_source_card(message: Message, job: RuntimeJob, context: AppConte
         reply_markup=color_keyboard(
             context.premium,
             job.job_id,
+            context.settings.color_picker_url,
             adaptive=True,
             language=job.language,
         ),
@@ -128,8 +131,8 @@ async def _accept_source(
     if message.from_user is None:
         return
     user_id = message.from_user.id
-    language = current_language(message, context)
     is_admin = await context.admins.is_admin(user_id)
+    language = current_language(message, context, is_admin=is_admin)
     if context.shutdown_requested:
         await context.ui.answer(
             message, f'{context.premium.html("WARNING")} {text(language, "overloaded")}'
@@ -208,7 +211,10 @@ def _looks_like_new_source(message: Message) -> bool:
     return (
         parse_pack_link(value) is not None
         or extract_single_emoji(value) is not None
-        or bool(message.entities)
+        or any(
+            entity.type == MessageEntityType.CUSTOM_EMOJI
+            for entity in (message.entities or [])
+        )
     )
 
 
@@ -306,6 +312,7 @@ async def _select_color(
                 "choose_output",
                 icon=context.premium.html("COLOR"),
                 color=color.hex,
+                **context.premium.placeholders(),
             ),
             reply_markup=output_keyboard(
                 context.premium, job.job_id, single=True, language=job.language
@@ -333,7 +340,12 @@ async def _select_color(
     job.status = JobStatus.AWAITING_PREVIEW_DECISION
     await context.ui.edit(
         control,
-        text(job.language, "preview_ready", icon=context.premium.html("PREVIEW")),
+        text(
+            job.language,
+            "preview_ready",
+            icon=context.premium.html("PREVIEW"),
+            **context.premium.placeholders(),
+        ),
         reply_markup=preview_keyboard(context.premium, job.job_id, job.language),
     )
 
@@ -512,6 +524,7 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
                     "done_file",
                     icon=context.premium.html("SUCCESS"),
                     color=job.selected_color or "Adaptive",
+                    **context.premium.placeholders(),
                 ),
                 reply_markup=result_keyboard(context.premium, language=job.language),
             )
@@ -575,6 +588,7 @@ async def _deliver_zip(
         "done_file",
         icon=context.premium.html("SUCCESS"),
         color=job.selected_color or "Adaptive",
+        **context.premium.placeholders(),
     )
     if job.errors:
         body += "\n\n" + _error_summary(job)
@@ -598,7 +612,12 @@ async def _publish_packs(
     title = job.pack_title or "Recolored"
     await context.ui.edit(
         control,
-        text(job.language, "publishing", icon=context.premium.html("UPLOAD")),
+        text(
+            job.language,
+            "publishing",
+            icon=context.premium.html("UPLOAD"),
+            **context.premium.placeholders(),
+        ),
         reply_markup=processing_keyboard(context.premium, job.job_id, job.language),
     )
     groups = [outputs[index : index + maximum] for index in range(0, len(outputs), maximum)]
@@ -652,6 +671,7 @@ async def _publish_packs(
         kind="Emoji Pack" if custom else "Sticker Pack",
         count=len(outputs),
         color=job.selected_color or "Adaptive",
+        **context.premium.placeholders(),
     )
     if len(links) > 1:
         body += f"\n\n{link_lines}"
@@ -688,7 +708,7 @@ async def restart_callback(callback: CallbackQuery, context: AppContext) -> None
     if isinstance(callback.message, Message):
         language = context.languages.get(
             callback.from_user.id,
-            "ru" if (callback.from_user.language_code or "").startswith("ru") else "en",
+            "ru",
         )
         await show_main_menu(callback.message, context, language)
 
@@ -731,6 +751,7 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
             reply_markup=color_keyboard(
                 context.premium,
                 job.job_id,
+                context.settings.color_picker_url,
                 language=job.language,
             ),
         )
@@ -743,6 +764,7 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
                 "choose_output",
                 icon=context.premium.html("COLOR"),
                 color=job.selected_color,
+                **context.premium.placeholders(),
             ),
             reply_markup=output_keyboard(
                 context.premium, job.job_id, single=False, language=job.language

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import logging
 import shutil
 import time
 from datetime import UTC, datetime
@@ -21,6 +22,7 @@ from app.keyboards.admin import admin_keyboard
 from app.states import AdminStates
 
 router = Router(name="admin")
+LOGGER = logging.getLogger(__name__)
 
 
 def _duration(seconds: float) -> str:
@@ -32,7 +34,14 @@ def _duration(seconds: float) -> str:
 
 async def _directory_size(path: Path) -> int:
     def calculate() -> int:
-        return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+        total = 0
+        for item in path.rglob("*"):
+            try:
+                if item.is_file():
+                    total += item.stat().st_size
+            except OSError:
+                continue
+        return total
 
     return await asyncio.to_thread(calculate)
 
@@ -56,14 +65,31 @@ async def _dashboard(context: AppContext) -> str:
     )
 
 
+async def _safe_dashboard(context: AppContext) -> str:
+    try:
+        return await _dashboard(context)
+    except Exception as error:
+        LOGGER.warning("Admin dashboard metrics unavailable | %s", type(error).__name__)
+        return (
+            f'{context.premium.html("ADMIN")} '
+            "<b>Emoji &amp; Sticker Color Bot — Admin</b>\n\n"
+            "Панель доступна. Не удалось получить часть системных метрик; "
+            "попробуйте обновить её позже."
+        )
+
+
 @router.message(Command("admin"))
 async def admin_command(message: Message, context: AppContext) -> None:
-    if message.from_user is None or not await context.admins.is_admin(message.from_user.id):
+    if message.from_user is None:
         return
-    owner = await context.admins.is_owner(message.from_user.id)
+    user_id = message.from_user.id
+    owner_id = context.admins.owner_id
+    if user_id != owner_id and not await context.admins.is_admin(user_id):
+        return
+    owner = user_id == owner_id
     await context.ui.answer(
         message,
-        await _dashboard(context),
+        await _safe_dashboard(context),
         reply_markup=admin_keyboard(context.premium, owner=owner),
     )
 
@@ -114,7 +140,7 @@ async def admin_callback(
         await _edit_admin(
             callback,
             context,
-            await _dashboard(context),
+            await _safe_dashboard(context),
             admin_keyboard(context.premium, owner=owner),
         )
     elif action == "jobs":
@@ -167,7 +193,7 @@ async def admin_callback(
         await _edit_admin(
             callback,
             context,
-            await _dashboard(context),
+            await _safe_dashboard(context),
             admin_keyboard(context.premium, owner=owner),
         )
     elif action == "load":

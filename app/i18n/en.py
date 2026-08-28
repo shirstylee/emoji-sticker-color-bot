@@ -9,23 +9,26 @@ EN: dict[str, str] = {
     "language_prompt": "{icon} <b>Choose a language</b>\nВыберите язык",
     "main_menu": (
         "{icon} <b>I recolor Premium Emoji and stickers in any color</b>\n\n"
-        "Original outlines, lighting, shadows, and transparency are preserved.\n\n"
-        "Choose an action:"
+        "{color_icon} Original outlines, lighting, shadows, and transparency are preserved.\n\n"
+        "{info_icon} Choose an action:"
     ),
     "send_source": (
-        "{icon} <b>Send material to recolor</b>\n\n"
-        "You can send a Premium Emoji, sticker, PNG, WEBP, TGS, WEBM, ZIP, "
-        "or a Telegram pack link."
+        "{icon} <b>Send material to recolor:</b>\n\n"
+        "{emoji_icon} Premium Emoji — as a separate message\n"
+        "{sticker_icon} Sticker — as a separate message\n"
+        "{link_icon} Pack link — addemoji or addstickers\n"
+        "{file_icon} File — TGS, WEBP, WEBM, PNG, or ZIP"
     ),
     "my_packs": (
         "{icon} <b>My packs</b>\n\n"
-        "The bot does not store user or pack history. You can manage packs you added "
-        "through the official @Stickers bot."
+        "{lock_icon} The bot does not store user or pack history.\n\n"
+        "{link_icon} Manage packs you added through the official @Stickers bot."
     ),
     "information": (
         "{icon} <b>Emoji &amp; Sticker Color Bot</b>\n\n"
-        "Recolors Premium Emoji, stickers, and packs while preserving outlines, lighting, "
-        "shadows, and transparency. PNG, WEBP, TGS, WEBM, and ZIP are supported."
+        "{color_icon} Recolors Premium Emoji, stickers, and packs while preserving outlines, "
+        "lighting, shadows, and transparency.\n\n"
+        "{file_icon} PNG, WEBP, TGS, WEBM, and ZIP are supported."
     ),
     "help": (
         "{icon} <b>Emoji &amp; Sticker Color Bot — help</b>\n\n"
@@ -56,21 +59,29 @@ EN: dict[str, str] = {
     "overloaded": "The service is busy. Please try again a little later.",
     "rate_limited": "Too many new jobs. Please try later.",
     "source_found": (
-        "{icon} <b>Source found</b>\n\nTitle: {title}\nType: {kind}\nItems: {count}\n"
-        "Formats:\n{formats}\n\n"
+        "{icon} <b>Source found</b>\n\n{edit_icon} Title: {title}\n"
+        "{info_icon} Type: {kind}\n{file_icon} Items: {count}\n"
+        "{pack_icon} Formats:\n{formats}\n\n{color_icon} <b>Choose a color</b>\n\n"
         "<code>#FFFFFF</code> — White\n<code>#000000</code> — Black\n"
         "<code>#FF0000</code> — Red\n<code>#FF9800</code> — Orange\n"
         "<code>#FFEB3B</code> — Yellow\n<code>#4CAF50</code> — Green\n"
         "<code>#03A9F4</code> — Light blue\n<code>#2196F3</code> — Blue\n"
         "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink\n\n"
-        "Tap a code to copy it and send it to the bot. You can also send HEX/RGB manually."
+        "Tap a code to copy it and send it to the bot. Or open Pick a color, copy the "
+        "HEX/RGB code from the website, and send it as a message."
     ),
     "invalid_color": (
         "Color not recognized. Example: <code>#8B5CF6</code> "
         "or <code>rgb(139, 92, 246)</code>."
     ),
-    "choose_output": "{icon} Color <code>{color}</code> accepted. Choose an output:",
-    "preview_ready": "{icon} A preview of the first item is ready. Continue?",
+    "choose_output": (
+        "{icon} Color <code>{color}</code> accepted.\n"
+        "{pack_icon} Choose an output format:"
+    ),
+    "preview_ready": (
+        "{icon} A preview of the first item is ready.\n"
+        "{color_icon} Outlines and lighting are preserved. Continue?"
+    ),
     "adaptive_preview": (
         "{icon} The shape is ready. Telegram chooses the actual Adaptive Emoji color based on "
         "where it is used and the current theme."
@@ -79,12 +90,18 @@ EN: dict[str, str] = {
     "split_confirm": "This source is too large for one Telegram pack. Split it into parts?",
     "invalid_pack_name": "The title must be 1–64 characters. Enter another title.",
     "processing": "{icon} Recoloring…\n{done} / {total}",
-    "publishing": "{icon} Files are ready. Uploading items to Telegram…",
+    "publishing": (
+        "{icon} Files are ready.\n{pack_icon} Uploading items to Telegram…"
+    ),
     "flood_wait": "Telegram temporarily limited the upload speed. It will continue automatically.",
-    "done_file": "{icon} Done. Color: <code>{color}</code>",
+    "done_file": (
+        "{icon} Done. Color: <code>{color}</code>\n"
+        "{download_icon} The file was sent above."
+    ),
     "done_pack": (
-        "{icon} <b>Pack ready</b>\n\nTitle: {title}\nType: {kind}\n"
-        "Items: {count}\nColor: <code>{color}</code>"
+        "{icon} <b>Pack ready</b>\n\n{edit_icon} Title: {title}\n"
+        "{info_icon} Type: {kind}\n{file_icon} Items: {count}\n"
+        "{color_icon} Color: <code>{color}</code>"
     ),
     "partial": "Done: {done} / {total}\nFailed: {failed}",
     "file_too_large": "The file is too large.",

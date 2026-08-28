@@ -13,8 +13,8 @@
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" />
   <img alt="aiogram 3.31" src="https://img.shields.io/badge/aiogram-3.31-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
   <img alt="Telegram Bot API 10.3" src="https://img.shields.io/badge/Bot_API-10.3-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
-  <img alt="Tests: 95 passed" src="https://img.shields.io/badge/tests-95%20passed-2EA44F?style=flat-square" />
-  <img alt="Languages: RU and EN" src="https://img.shields.io/badge/languages-RU%20%7C%20EN-7C3AED?style=flat-square" />
+  <img alt="Tests: 99 passed" src="https://img.shields.io/badge/tests-99%20passed-2EA44F?style=flat-square" />
+  <img alt="Interface: Russian, admin RU and EN" src="https://img.shields.io/badge/interface-RU%20%7C%20admin%20RU%20%2F%20EN-7C3AED?style=flat-square" />
 </p>
 
 ---
@@ -32,7 +32,7 @@
 - 🎬 видеостикеры — `WEBM`;
 - 📦 наборы и пакетная обработка — Telegram Pack, media group, `ZIP`;
 - 😀 составные Unicode Emoji и Adaptive Emoji;
-- 🌍 интерфейс на русском и английском языках.
+- 🌍 русский интерфейс для пользователей и переключение русского/английского для администраторов.
 
 ---
 
@@ -54,7 +54,7 @@
 ## 🔄 Как это работает
 
 1. 📤 Отправьте боту стикер, Custom Emoji, файл, media group, ZIP или ссылку на Telegram-набор.
-2. 🎯 Нажмите на моноширный код цвета, скопируйте его или отправьте HEX/RGB вручную.
+2. 🎯 Откройте HTML Color Picker или нажмите на моноширный код, затем отправьте боту скопированный HEX/RGB.
 3. 👀 Посмотрите превью и при необходимости скорректируйте цвет.
 4. 📦 Выберите формат результата: новый набор, файл или архив.
 5. ✅ Получите готовый результат — исходные Telegram-наборы никогда не изменяются.
@@ -185,6 +185,7 @@ TEMP_ROOT=temp/jobs
 PREMIUM_EMOJI_PATH=Main.txt
 EMOJI_FONT_PATH=
 LOG_DIR=logs
+COLOR_PICKER_URL=https://htmlcolorcodes.com/color-picker/
 ```
 
 Полный список лимитов и настроек с безопасными значениями по умолчанию находится в `.env.example`.
@@ -206,10 +207,9 @@ LOG_DIR=logs
 - `/start` — начать работу;
 - `/help` — инструкция и поддерживаемые форматы;
 - `/colors` — примеры цветов;
-- `/language` — русский или английский;
 - `/cancel` — отменить текущую задачу;
 
-`/admin` доступна только owner и назначенным администраторам: uptime, jobs, workers, CPU/RAM/disk/temp, агрегированная статистика, Telegram 429, лимиты, ошибки, maintenance mode, Premium Emoji и управление администраторами.
+Обычным пользователям доступен только русский интерфейс. Для owner и назначенных администраторов дополнительно доступны `/language` (русский/английский), кнопка «Мои наборы» и `/admin`: uptime, jobs, workers, CPU/RAM/disk/temp, агрегированная статистика, Telegram 429, лимиты, ошибки, maintenance mode, Premium Emoji и управление администраторами.
 
 ---
 

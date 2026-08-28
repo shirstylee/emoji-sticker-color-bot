@@ -118,7 +118,7 @@ async def test_429_pack_integration_does_not_duplicate_items(tmp_path: Path) -> 
 @pytest.mark.asyncio
 async def test_admin_command_is_silent_for_regular_user() -> None:
     message = SimpleNamespace(from_user=SimpleNamespace(id=999), answer=AsyncMock())
-    admins = SimpleNamespace(is_admin=AsyncMock(return_value=False))
+    admins = SimpleNamespace(owner_id=777, is_admin=AsyncMock(return_value=False))
     context = SimpleNamespace(admins=admins)
     await admin_command(message, context)  # type: ignore[arg-type]
     message.answer.assert_not_awaited()
@@ -146,7 +146,7 @@ async def test_admin_command_answers_configured_owner(
     )
     message = SimpleNamespace(from_user=SimpleNamespace(id=777))
     dashboard = AsyncMock(return_value="admin dashboard")
-    monkeypatch.setattr("app.handlers.admin._dashboard", dashboard)
+    monkeypatch.setattr("app.handlers.admin._safe_dashboard", dashboard)
 
     await admin_command(message, context)  # type: ignore[arg-type]
 

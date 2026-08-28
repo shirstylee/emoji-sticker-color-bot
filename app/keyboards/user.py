@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from app.services.premium_emoji import PremiumEmojiRegistry
 
 BUTTON_LABELS = {
     "ru": {
+        "picker": "Подобрать цвет",
         "adaptive": "Сделать Adaptive",
         "cancel": "Отмена",
         "continue": "Продолжить",
@@ -29,6 +30,7 @@ BUTTON_LABELS = {
         "back": "Назад",
     },
     "en": {
+        "picker": "Pick a color",
         "adaptive": "Make Adaptive",
         "cancel": "Cancel",
         "continue": "Continue",
@@ -77,19 +79,24 @@ def language_keyboard(registry: PremiumEmojiRegistry) -> InlineKeyboardMarkup:
 
 
 def main_menu_keyboard(
-    registry: PremiumEmojiRegistry, language: str = "en"
+    registry: PremiumEmojiRegistry,
+    language: str = "ru",
+    *,
+    is_admin: bool = False,
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                _button(
-                    registry,
-                    "BRUSH",
-                    _label(language, "main_recolor"),
-                    callback_data="menu:recolor",
-                    style="primary",
-                )
-            ],
+    rows = [
+        [
+            _button(
+                registry,
+                "BRUSH",
+                _label(language, "main_recolor"),
+                callback_data="menu:recolor",
+                style="primary",
+            )
+        ],
+    ]
+    if is_admin:
+        rows.append(
             [
                 _button(
                     registry,
@@ -97,17 +104,19 @@ def main_menu_keyboard(
                     _label(language, "my_packs"),
                     callback_data="menu:packs",
                 )
-            ],
-            [
-                _button(
-                    registry,
-                    "INFO",
-                    _label(language, "information"),
-                    callback_data="menu:info",
-                )
-            ],
+            ]
+        )
+    rows.append(
+        [
+            _button(
+                registry,
+                "INFO",
+                _label(language, "information"),
+                callback_data="menu:info",
+            )
         ]
     )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def menu_back_keyboard(
@@ -155,11 +164,21 @@ def packs_keyboard(
 def color_keyboard(
     registry: PremiumEmojiRegistry,
     job_id: str,
+    color_picker_url: str,
     *,
     adaptive: bool = True,
     language: str = "en",
 ) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            _button(
+                registry,
+                "COLOR",
+                _label(language, "picker"),
+                web_app=WebAppInfo(url=color_picker_url),
+            )
+        ]
+    ]
     if adaptive:
         rows.append(
             [

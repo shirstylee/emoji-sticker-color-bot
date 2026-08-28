@@ -116,6 +116,11 @@ class PremiumEmojiRegistry:
     def button_id(self, key: str) -> str | None:
         return self.icon(key).custom_emoji_id if self.enabled else None
 
+    def placeholders(self) -> dict[str, str]:
+        """Semantic HTML icons for richer localized messages."""
+
+        return {f"{key.lower()}_icon": self.html(key) for key in SEMANTIC_LABELS}
+
     def disable(self) -> None:
         if self.enabled:
             LOGGER.warning("Telegram rejected Premium Emoji UI; runtime fallback enabled")
