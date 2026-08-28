@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 
 from app.database.connection import Database
 
@@ -41,6 +41,11 @@ class AdminService:
         if not await self.is_admin(user_id):
             raise PermissionError("Only administrator packs can be persisted")
         await self.database.add_admin_packs(user_id, packs)
+
+    async def forget_packs(self, user_id: int, urls: Collection[str]) -> None:
+        if not await self.is_admin(user_id):
+            raise PermissionError("Only administrator packs can be persisted")
+        await self.database.remove_admin_packs(user_id, urls)
 
     async def add(self, actor_id: int, target_id: int) -> None:
         if not await self.is_owner(actor_id):

@@ -64,6 +64,10 @@ async def test_admin_language_and_created_packs_survive_restart(tmp_path: Path) 
     packs = await reopened.admin_packs(100001)
     assert packs[0]["title"] == "Blue Emoji"
     assert packs[0]["url"] == "https://t.me/addemoji/blue_by_bot"
+    await reopened.remove_admin_packs(
+        100001, {"https://t.me/addemoji/blue_by_bot"}
+    )
+    assert await reopened.admin_packs(100001) == []
     await reopened.close()
 
 

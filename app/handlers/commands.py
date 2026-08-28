@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import html
+import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
 
@@ -17,8 +19,15 @@ from app.keyboards.user import (
     menu_back_keyboard,
     packs_keyboard,
 )
+from app.services.source_resolver import parse_pack_link
 
 router = Router(name="commands")
+LOGGER = logging.getLogger(__name__)
+
+MISSING_STICKER_SET_MARKERS = (
+    "stickerset_invalid",
+    "sticker set not found",
+)
 
 
 def current_language(
@@ -39,6 +48,43 @@ async def _delete_previous_menu(
         return
     with contextlib.suppress(Exception):
         await context.bot.delete_message(previous[0], previous[1])
+
+
+def _is_missing_sticker_set(error: TelegramBadRequest) -> bool:
+    message = str(error).lower()
+    return any(marker in message for marker in MISSING_STICKER_SET_MARKERS)
+
+
+async def _synchronize_admin_packs(
+    context: AppContext, user_id: int, packs: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    existing: list[dict[str, str]] = []
+    removed_urls: list[str] = []
+    for pack in packs:
+        url = pack.get("url", "")
+        parsed = parse_pack_link(url)
+        if parsed is None:
+            removed_urls.append(url)
+            continue
+        _, name = parsed
+        try:
+            await context.bot.get_sticker_set(name)
+        except TelegramBadRequest as error:
+            if _is_missing_sticker_set(error):
+                removed_urls.append(url)
+                continue
+            existing.append(pack)
+        except Exception as error:
+            LOGGER.warning(
+                "Could not verify a saved sticker set; keeping it | %s",
+                type(error).__name__,
+            )
+            existing.append(pack)
+        else:
+            existing.append(pack)
+    if removed_urls:
+        await context.admins.forget_packs(user_id, removed_urls)
+    return existing
 
 
 async def show_main_menu(
@@ -202,6 +248,9 @@ async def menu_callback(callback: CallbackQuery, context: AppContext) -> None:
             await show_main_menu(callback.message, context, "ru")
             return
         packs = await context.admins.packs(callback.from_user.id)
+        packs = await _synchronize_admin_packs(
+            context, callback.from_user.id, packs
+        )
         if packs:
             visible = packs[-25:]
             lines = []

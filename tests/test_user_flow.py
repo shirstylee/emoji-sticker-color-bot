@@ -5,9 +5,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.methods import GetStickerSet
 from aiogram.types import Chat, Message, MessageEntity, User
 
-from app.handlers.commands import start
+from app.handlers.commands import menu_callback, start
 from app.handlers.workflow import _looks_like_new_source, job_callback, private_message
 from app.models.job import JobStatus
 from app.services.jobs import JobManager
@@ -72,6 +74,75 @@ async def test_admin_start_uses_saved_language_without_prompt() -> None:
         "My packs",
         "Information",
     ]
+
+
+@pytest.mark.asyncio
+async def test_my_packs_removes_deleted_sets_but_keeps_unverified_sets() -> None:
+    registry = PremiumEmojiRegistry.load(Path("Main.txt"))
+    packs = [
+        {
+            "title": "Active",
+            "url": "https://t.me/addemoji/active_by_bot",
+            "kind": "emoji",
+        },
+        {
+            "title": "Temporarily unavailable",
+            "url": "https://t.me/addstickers/unavailable_by_bot",
+            "kind": "sticker",
+        },
+        {
+            "title": "Deleted",
+            "url": "https://t.me/addemoji/deleted_by_bot",
+            "kind": "emoji",
+        },
+    ]
+
+    async def get_sticker_set(name: str) -> object:
+        if name == "deleted_by_bot":
+            raise TelegramBadRequest(
+                method=GetStickerSet(name=name),
+                message="Bad Request: STICKERSET_INVALID",
+            )
+        if name == "unavailable_by_bot":
+            raise ConnectionError("temporary network failure")
+        return object()
+
+    control = Message(
+        message_id=50,
+        date=0,
+        chat=Chat(id=7, type="private"),
+        from_user=User(id=999, is_bot=True, first_name="Bot"),
+        text="Menu",
+    )
+    callback = SimpleNamespace(
+        data="menu:packs",
+        message=control,
+        from_user=SimpleNamespace(id=7),
+        answer=AsyncMock(),
+    )
+    admins = SimpleNamespace(
+        is_admin=AsyncMock(return_value=True),
+        packs=AsyncMock(return_value=packs),
+        forget_packs=AsyncMock(),
+    )
+    context = SimpleNamespace(
+        premium=registry,
+        ui=SimpleNamespace(edit=AsyncMock()),
+        bot=SimpleNamespace(get_sticker_set=AsyncMock(side_effect=get_sticker_set)),
+        menu_messages={},
+        languages={7: "ru"},
+        admins=admins,
+    )
+
+    await menu_callback(callback, context)  # type: ignore[arg-type]
+
+    admins.forget_packs.assert_awaited_once_with(
+        7, ["https://t.me/addemoji/deleted_by_bot"]
+    )
+    rendered = context.ui.edit.await_args.args[1]
+    assert "Active" in rendered
+    assert "Temporarily unavailable" in rendered
+    assert "Deleted" not in rendered
 
 
 @pytest.mark.asyncio

@@ -125,7 +125,8 @@ def test_rich_messages_render_with_real_premium_emoji(
             assert rendered.count("<tg-emoji ") == expected_count
 
     assert "Отправьте материал для перекраски" in RU["send_source"]
-    assert RU["send_source"].startswith("<blockquote>")
+    assert not RU["send_source"].startswith("<blockquote>")
+    assert "\n\n<blockquote>{emoji_icon}" in RU["send_source"]
     assert RU["send_source"].endswith("</blockquote>")
     assert "Premium Emoji — отдельным сообщением" in RU["send_source"]
     assert "Стикер — отдельным сообщением" in RU["send_source"]

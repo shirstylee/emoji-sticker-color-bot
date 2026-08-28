@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Collection, Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -228,6 +228,24 @@ class Database:
                 "UPDATE admins SET created_packs_json=? "
                 "WHERE telegram_user_id=? AND is_active=1",
                 (json.dumps(existing, ensure_ascii=False), telegram_user_id),
+            )
+            await self.connection.commit()
+
+    async def remove_admin_packs(
+        self, telegram_user_id: int, urls: Collection[str]
+    ) -> None:
+        removed_urls = {str(url) for url in urls if url}
+        if not removed_urls:
+            return
+        async with self._admin_settings_lock:
+            existing = await self.admin_packs(telegram_user_id)
+            remaining = [
+                pack for pack in existing if pack.get("url") not in removed_urls
+            ]
+            await self.connection.execute(
+                "UPDATE admins SET created_packs_json=? "
+                "WHERE telegram_user_id=? AND is_active=1",
+                (json.dumps(remaining, ensure_ascii=False), telegram_user_id),
             )
             await self.connection.commit()
 

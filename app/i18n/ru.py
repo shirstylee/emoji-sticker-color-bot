@@ -13,8 +13,8 @@ RU: dict[str, str] = {
         "{info_icon} Выберите действие:"
     ),
     "send_source": (
-        "<blockquote>{icon} <b>Отправьте материал для перекраски:</b>\n\n"
-        "{emoji_icon} Premium Emoji — отдельным сообщением\n"
+        "{icon} <b>Отправьте материал для перекраски:</b>\n\n"
+        "<blockquote>{emoji_icon} Premium Emoji — отдельным сообщением\n"
         "{sticker_icon} Стикер — отдельным сообщением\n"
         "{link_icon} Ссылка на набор — addemoji или addstickers\n"
         "{file_icon} Файл — TGS, WEBP, WEBM, PNG или ZIP</blockquote>"
