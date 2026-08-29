@@ -328,14 +328,6 @@ def single_result_keyboard(
             [
                 _button(
                     registry,
-                    "DOWNLOAD",
-                    _label(language, "download_file"),
-                    callback_data=f"job:{job_id}:download",
-                )
-            ],
-            [
-                _button(
-                    registry,
                     "BRUSH",
                     _label(language, "restart"),
                     callback_data=f"job:{job_id}:restart",

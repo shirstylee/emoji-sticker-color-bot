@@ -152,10 +152,10 @@ def test_single_result_and_information_actions(
     result = single_result_keyboard(registry, "job", "ru")
     assert [row[0].callback_data for row in result.inline_keyboard] == [
         "job:job:single_pack",
-        "job:job:download",
         "job:job:restart",
         "job:job:home",
     ]
+    assert all("download" not in (row[0].callback_data or "") for row in result.inline_keyboard)
     assert result.inline_keyboard[0][0].style == "primary"
     assert result.inline_keyboard[-1][0].text == "Главное меню"
 
