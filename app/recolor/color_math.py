@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import colorsys
 import re
 from dataclasses import dataclass
 
@@ -285,9 +286,27 @@ def recolor_rgb(
         # small dots and fine details to remain clearly visible.
         highlight = np.maximum(output_lab[..., 0] - target_l, 0.0)
         output_lab[..., 0] -= highlight * min(0.75, vivid)
-        output_lab[..., 1:3] *= 1.0 + vivid * 0.7
+        # The 0.9 coefficient is deliberately between the original excessive
+        # boost (1.0) and the pastel-looking correction (0.7).
+        output_lab[..., 1:3] *= 1.0 + vivid * 0.9
     output_lab = gamut_map_oklab(output_lab)
     recolored = np.clip(oklab_to_srgb(output_lab), 0.0, 1.0)
+    if amount > 1.0 and target_chroma >= 0.012:
+        # Constant OKLab hue can look progressively bluer in bright saturated
+        # purples. Align the final RGB hue with the color the user entered while
+        # retaining the contrast range and saturation produced above.
+        target_hue, target_saturation, _ = colorsys.rgb_to_hsv(
+            *target_normalized
+        )
+        if target_saturation > 1e-6:
+            hue_basis = np.asarray(
+                colorsys.hsv_to_rgb(target_hue, 1.0, 1.0), dtype=np.float64
+            )
+            rgb_min = recolored.min(axis=-1)
+            rgb_chroma = recolored.max(axis=-1) - rgb_min
+            hue_aligned = rgb_min[..., None] + rgb_chroma[..., None] * hue_basis
+            hue_mix = float(np.clip((amount - 1.0) / 0.4, 0.0, 1.0))
+            recolored += (hue_aligned - recolored) * hue_mix
     return np.rint(recolored * 255.0).astype(np.uint8)
 
 

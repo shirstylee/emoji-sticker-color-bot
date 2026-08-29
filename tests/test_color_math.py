@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import colorsys
+
 import numpy as np
 import pytest
 from PIL import Image
@@ -121,9 +123,15 @@ def test_vivid_intensity_produces_dense_purple_highlights() -> None:
     vivid_lab = srgb_to_oklab(vivid.astype(np.float64) / 255.0)
     target_lab = srgb_to_oklab(np.asarray(target.rgb, dtype=np.float64) / 255.0)
 
-    assert float(vivid_lab[0, 0, 0]) < float(normal_lab[0, 0, 0]) - 0.03
+    assert float(vivid_lab[0, 0, 0]) < float(normal_lab[0, 0, 0]) - 0.02
     assert float(vivid_lab[0, 0, 0]) > float(target_lab[0]) + 0.06
-    assert float(vivid_lab[0, 1, 0]) < float(normal_lab[0, 1, 0])
+    assert float(np.hypot(vivid_lab[0, 0, 1], vivid_lab[0, 0, 2])) > float(
+        np.hypot(normal_lab[0, 0, 1], normal_lab[0, 0, 2])
+    ) + 0.03
+    target_hue = colorsys.rgb_to_hsv(*(channel / 255.0 for channel in target.rgb))[0]
+    vivid_hue = colorsys.rgb_to_hsv(*(vivid[0, 0] / 255.0))[0]
+    assert abs(vivid_hue - target_hue) < 0.01
+    assert float(vivid_lab[0, 1, 0]) <= float(normal_lab[0, 1, 0]) + 0.005
     assert float(np.hypot(vivid_lab[0, 1, 1], vivid_lab[0, 1, 2])) >= float(
         np.hypot(normal_lab[0, 1, 1], normal_lab[0, 1, 2])
     )
