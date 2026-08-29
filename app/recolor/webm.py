@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,10 +26,13 @@ from app.recolor.raster import is_textured_image
 
 DURATION_RE = re.compile(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
 VIDEO_RE = re.compile(
-    r"Video:\s*(?P<codec>[^,\s]+).*?\b(?P<width>\d{2,5})x(?P<height>\d{2,5})\b"
-    r".*?(?P<fps>\d+(?:\.\d+)?)\s*fps",
-    re.DOTALL,
+    r"Video:\s*(?P<codec>[^,\s]+)[^\r\n]*?"
+    r"\b(?P<width>\d{2,5})x(?P<height>\d{2,5})\b[^\r\n]*"
 )
+FPS_RE = re.compile(r"(?P<fps>\d+(?:\.\d+)?)\s*fps")
+TBR_RE = re.compile(r"(?P<tbr>\d+(?:\.\d+)?)\s*tbr")
+OUT_TIME_RE = re.compile(r"out_time=(\d+):(\d+):(\d+(?:\.\d+)?)")
+FRAME_RE = re.compile(r"^frame=(\d+)$", re.MULTILINE)
 
 
 class WebmError(ValueError):
@@ -83,19 +87,74 @@ async def probe_webm(path: Path, *, timeout: float = 20) -> WebmInfo:
     report = stderr.decode("utf-8", errors="replace")
     duration_match = DURATION_RE.search(report)
     video_match = VIDEO_RE.search(report)
-    if not duration_match or not video_match:
+    if not video_match:
         raise WebmError("FFmpeg could not identify the WEBM video stream")
-    hours, minutes, seconds = duration_match.groups()
-    duration = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    video_line = video_match.group(0)
+    fps_match = FPS_RE.search(video_line) or TBR_RE.search(video_line)
+    duration = _timestamp_seconds(duration_match.groups()) if duration_match else 0.0
+    fps = 0.0
+    if fps_match:
+        fps_value = fps_match.groupdict().get("fps") or fps_match.groupdict().get("tbr")
+        if fps_value is not None:
+            fps = float(fps_value)
+
+    if duration <= 0 or fps <= 0:
+        # Some valid Telegram WEBM files omit the container Duration field and
+        # expose only ``tbr`` instead of ``fps``. Scan at most 3.2 seconds and
+        # use FFmpeg's machine-readable progress rather than rejecting them.
+        scan_arguments = [
+            str(ffmpeg_executable()),
+            "-v",
+            "error",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+        ]
+        if video_match.group("codec").lower() == "vp9":
+            scan_arguments.extend(("-c:v", "libvpx-vp9"))
+        scan_arguments.extend(
+            (
+                "-i",
+                str(path),
+                "-map",
+                "0:v:0",
+                "-t",
+                f"{TELEGRAM_VIDEO_MAX_DURATION_SECONDS + 0.2:.1f}",
+                "-f",
+                "null",
+                "-",
+            )
+        )
+        scan_code, stdout, scan_stderr = await _run_capture(scan_arguments, timeout)
+        progress = stdout.decode("utf-8", errors="replace")
+        if scan_code:
+            detail = scan_stderr.decode("utf-8", errors="replace").strip()
+            raise WebmError(detail or "FFmpeg could not decode the WEBM video stream")
+        time_matches = OUT_TIME_RE.findall(progress)
+        if duration <= 0 and time_matches:
+            duration = _timestamp_seconds(time_matches[-1])
+        frames = FRAME_RE.findall(progress)
+        frame_count = int(frames[-1]) if frames else 0
+        if fps <= 0 and duration > 0 and frame_count > 0:
+            fps = frame_count / duration
+        if duration <= 0 and fps > 0 and frame_count > 0:
+            duration = frame_count / fps
+    if duration <= 0 or fps <= 0:
+        raise WebmError("FFmpeg could not determine WEBM timing")
     return WebmInfo(
         width=int(video_match.group("width")),
         height=int(video_match.group("height")),
-        fps=float(video_match.group("fps")),
+        fps=fps,
         duration=duration,
         codec=video_match.group("codec").lower(),
         has_audio=bool(re.search(r"Stream #[^\r\n]+:\s*Audio:", report)),
         has_alpha="alpha_mode" in report or "yuva" in report,
     )
+
+
+def _timestamp_seconds(parts: Sequence[str]) -> float:
+    hours, minutes, seconds = parts
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 
 async def _stop_process(process: asyncio.subprocess.Process) -> None:

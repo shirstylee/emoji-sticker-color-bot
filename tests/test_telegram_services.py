@@ -235,6 +235,50 @@ async def test_append_to_existing_set_reports_each_success(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
+async def test_append_to_existing_set_skips_one_rejected_video(
+    tmp_path: Path,
+) -> None:
+    class FakeBot:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def add_sticker_to_set(self, **_: object) -> bool:
+            self.calls += 1
+            if self.calls == 2:
+                raise TelegramBadRequest(
+                    SendSticker(chat_id=1, sticker="invalid"),
+                    "Bad Request: STICKER_VIDEO_LONG",
+                )
+            return True
+
+    bot = FakeBot()
+    publisher = StickerPublisher(  # type: ignore[arg-type]
+        bot,
+        TelegramStickerRateController(conservative_enabled=False),
+    )
+    progress: list[tuple[int, int]] = []
+    item_error = AsyncMock()
+    files = [
+        (tmp_path / f"{index}.webm", MediaFormat.WEBM, ("🎨",))
+        for index in range(3)
+    ]
+
+    failed = await publisher.append_to_set(
+        user_id=1,
+        name="saved_by_ColorBot",
+        files=files,
+        cancel_event=asyncio.Event(),
+        on_progress=lambda done, total: _append_progress(progress, done, total),
+        on_error=item_error,
+    )
+
+    assert failed == [2]
+    assert bot.calls == 3
+    assert progress == [(1, 3), (2, 3)]
+    assert item_error.await_args.args[0] == 2
+
+
+@pytest.mark.asyncio
 async def test_conservative_pack_window_counts_items_and_skips_chat_sends(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -45,7 +45,7 @@ class RecolorIntensity(StrEnum):
         return {
             RecolorIntensity.SOFT: 0.55,
             RecolorIntensity.NORMAL: 1.0,
-            RecolorIntensity.VIVID: 1.25,
+            RecolorIntensity.VIVID: 1.4,
         }[self]
 
 
@@ -67,6 +67,7 @@ class RuntimeJob:
     target_pack_title: str | None = None
     target_pack_options: list[dict[str, str]] = field(default_factory=list)
     appended_items: int = 0
+    publication_total: int = 0
     status: JobStatus = JobStatus.SOURCE_ANALYSIS
     progress: int = 0
     total: int = 0

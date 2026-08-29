@@ -130,6 +130,7 @@ def test_rich_messages_render_with_real_premium_emoji(
         "choose_output": 2,
         "pack_choose_output": 4,
         "preview_ready": 2,
+        "processing": 1,
         "publishing": 4,
         "publishing_existing": 4,
         "done_file": 2,
@@ -148,6 +149,7 @@ def test_rich_messages_render_with_real_premium_emoji(
     assert RU["send_source"].endswith("</blockquote>")
     assert "Premium Emoji — отдельным сообщением" in RU["send_source"]
     assert "Стикер — отдельным сообщением" in RU["send_source"]
+    assert "<blockquote>Обработано:" in RU["processing"]
 
 
 def test_single_result_and_information_actions(

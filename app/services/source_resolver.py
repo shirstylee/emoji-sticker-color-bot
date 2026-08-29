@@ -23,11 +23,17 @@ from app.services.telegram_files import (
     sticker_extension,
 )
 from app.services.unicode_emoji import extract_single_emoji, render_emoji
-from app.validators.source import validate_source_file
+from app.validators.source import SourceValidationError, validate_source_file
 
 
 class SourceError(ValueError):
     """The Telegram message cannot be resolved into a safe supported source."""
+
+
+def _job_error_reason(error: Exception) -> str:
+    if isinstance(error, SourceValidationError):
+        return f"message_key:{error.message_key}"
+    return str(error).strip() or type(error).__name__
 
 
 PACK_LINK_RE = re.compile(
@@ -163,7 +169,7 @@ async def resolve_pack(
                     missing_ok=True
                 )
         if error is not None:
-            job.errors.append((index, type(error).__name__))
+            job.errors.append((index, _job_error_reason(error)))
     if not items:
         raise SourceError("Sticker set is empty")
     return SourceDescriptor(
@@ -316,7 +322,7 @@ async def resolve_media_group(
                 )
             )
         except (OSError, ValueError) as error:
-            job.errors.append((index, type(error).__name__))
+            job.errors.append((index, _job_error_reason(error)))
     if not items:
         raise SourceError("Media group contains no valid supported files")
     return SourceDescriptor(kind=SourceKind.MEDIA_GROUP, items=items, title="Media group")

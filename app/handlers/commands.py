@@ -14,12 +14,14 @@ from aiogram.types import CallbackQuery, Message
 from app.context import AppContext
 from app.i18n import text
 from app.keyboards.user import (
+    cancel_jobs_keyboard,
     information_keyboard,
     language_keyboard,
     main_menu_keyboard,
     menu_back_keyboard,
     packs_keyboard,
 )
+from app.models.job import JobStatus, RuntimeJob
 from app.services.source_resolver import parse_pack_link
 
 router = Router(name="commands")
@@ -321,18 +323,99 @@ async def cancel_command(message: Message, context: AppContext) -> None:
             f'{context.premium.html("INFO")} {text(language, "nothing_to_cancel")}',
         )
         return
-    current = jobs[-1]
-    if current.control_message_id is not None:
-        with contextlib.suppress(Exception):
-            await context.bot.edit_message_reply_markup(
-                chat_id=current.chat_id,
-                message_id=current.control_message_id,
-                reply_markup=None,
-            )
-    job = await context.jobs.cancel(current.job_id)
-    if job and job.created_sets:
-        await context.publisher.delete_sets(job.created_sets)
     await context.ui.answer(
         message,
-        text(language, "cancelled", icon=context.premium.html("CANCEL")),
+        _cancel_menu_text(jobs, language, context),
+        reply_markup=cancel_jobs_keyboard(context.premium, language),
+    )
+
+
+def _cancel_status(job: RuntimeJob, language: str) -> str:
+    if language == "ru":
+        if job.status == JobStatus.PUBLISHING:
+            return "Добавление в набор"
+        if job.status in {JobStatus.PROCESSING, JobStatus.GENERATING_PREVIEW}:
+            return "Обработка"
+        return "Ожидает действия"
+    if job.status == JobStatus.PUBLISHING:
+        return "Adding to a pack"
+    if job.status in {JobStatus.PROCESSING, JobStatus.GENERATING_PREVIEW}:
+        return "Processing"
+    return "Waiting for input"
+
+
+def _cancel_menu_text(
+    jobs: list[RuntimeJob], language: str, context: AppContext
+) -> str:
+    visible = jobs[-20:]
+    lines = [
+        f"#{job.short_id} — {_cancel_status(job, language)} — "
+        f"<b>{job.progress} / {max(job.total, 1)}</b>"
+        for job in reversed(visible)
+    ]
+    omitted = len(jobs) - len(visible)
+    if omitted:
+        lines.append(
+            f"… и ещё {omitted}" if language == "ru" else f"… and {omitted} more"
+        )
+    return text(
+        language,
+        "cancel_choose",
+        icon=context.premium.html("CANCEL"),
+        count=len(jobs),
+        jobs="\n".join(lines),
+    )
+
+
+async def _cancel_selected_jobs(
+    jobs: list[RuntimeJob], context: AppContext
+) -> int:
+    cancelled = 0
+    for target in jobs:
+        if target.control_message_id is not None:
+            with contextlib.suppress(Exception):
+                await context.bot.edit_message_reply_markup(
+                    chat_id=target.chat_id,
+                    message_id=target.control_message_id,
+                    reply_markup=None,
+                )
+        job = await context.jobs.cancel(target.job_id)
+        if job is None:
+            continue
+        cancelled += 1
+        if job.created_sets:
+            await context.publisher.delete_sets(job.created_sets)
+    return cancelled
+
+
+@router.callback_query(F.data.in_({"cancel:last", "cancel:all"}))
+async def cancel_callback(callback: CallbackQuery, context: AppContext) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    await callback.answer()
+    is_admin = await context.admins.is_admin(callback.from_user.id)
+    language = (
+        context.languages.get(callback.from_user.id, "ru") if is_admin else "ru"
+    )
+    jobs = sorted(
+        context.jobs.for_user(callback.from_user.id),
+        key=lambda item: item.created_at,
+    )
+    if not jobs:
+        await context.ui.edit(
+            callback.message,
+            f'{context.premium.html("INFO")} {text(language, "nothing_to_cancel")}',
+        )
+        return
+    targets = jobs if callback.data == "cancel:all" else jobs[-1:]
+    cancelled = await _cancel_selected_jobs(targets, context)
+    key = "cancelled_all" if callback.data == "cancel:all" else "cancelled_last"
+    await context.ui.edit(
+        callback.message,
+        text(
+            language,
+            key,
+            icon=context.premium.html("CANCEL"),
+            count=cancelled,
+        ),
     )

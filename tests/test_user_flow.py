@@ -10,7 +10,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import GetStickerSet
 from aiogram.types import Chat, Message, MessageEntity, User
 
-from app.handlers.commands import menu_callback, start
+from app.handlers.commands import cancel_callback, cancel_command, menu_callback, start
 from app.handlers.workflow import (
     _looks_like_new_source,
     _select_existing_pack,
@@ -347,3 +347,72 @@ async def test_existing_pack_accepts_aiogram_sticker_type_enum(
     assert not rejected
     assert "Adaptive Emoji" in context.ui.answer.await_args.args[1]
     start_processing.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cancel_menu_lists_jobs_and_can_cancel_last_then_all(tmp_path: Path) -> None:
+    registry = PremiumEmojiRegistry.load(Path("Main.txt"))
+    jobs = JobManager(tmp_path / "cancel-jobs")
+    await jobs.startup_cleanup()
+    first = await jobs.create(user_id=7, chat_id=7, language="ru", is_admin=True)
+    first.status = JobStatus.PROCESSING
+    first.progress = 8
+    first.total = 16
+    second = await jobs.create(user_id=7, chat_id=7, language="ru", is_admin=True)
+    second.status = JobStatus.AWAITING_COLOR
+    second.total = 1
+    sent = SimpleNamespace(message_id=60)
+    ui = SimpleNamespace(
+        answer=AsyncMock(return_value=sent),
+        edit=AsyncMock(),
+    )
+    context = SimpleNamespace(
+        admins=SimpleNamespace(is_admin=AsyncMock(return_value=True)),
+        languages={7: "ru"},
+        jobs=jobs,
+        premium=registry,
+        ui=ui,
+        bot=SimpleNamespace(edit_message_reply_markup=AsyncMock()),
+        publisher=SimpleNamespace(delete_sets=AsyncMock()),
+    )
+    command = SimpleNamespace(
+        from_user=SimpleNamespace(id=7),
+        chat=SimpleNamespace(id=7, type="private"),
+    )
+
+    await cancel_command(command, context)  # type: ignore[arg-type]
+
+    body = ui.answer.await_args.args[1]
+    markup = ui.answer.await_args.kwargs["reply_markup"]
+    assert "Активных задач: <b>2</b>" in body
+    assert f"#{first.short_id}" in body and f"#{second.short_id}" in body
+    assert "<blockquote>" in body
+    assert [row[0].callback_data for row in markup.inline_keyboard] == [
+        "cancel:last",
+        "cancel:all",
+    ]
+
+    menu = Message(
+        message_id=60,
+        date=0,
+        chat=Chat(id=7, type="private"),
+        from_user=User(id=999, is_bot=True, first_name="Bot"),
+        text="Cancel",
+    )
+    callback = SimpleNamespace(
+        data="cancel:last",
+        message=menu,
+        from_user=SimpleNamespace(id=7),
+        answer=AsyncMock(),
+    )
+    await cancel_callback(callback, context)  # type: ignore[arg-type]
+
+    assert jobs.get(second.job_id) is None
+    assert jobs.get(first.job_id) is first
+    assert "Последняя задача отменена" in ui.edit.await_args.args[1]
+
+    callback.data = "cancel:all"
+    await cancel_callback(callback, context)  # type: ignore[arg-type]
+
+    assert jobs.active_count == 0
+    assert "Все активные задачи отменены" in ui.edit.await_args.args[1]

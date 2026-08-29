@@ -140,7 +140,21 @@ EN: dict[str, str] = {
     "existing_pack_checking": "Checking the pack…",
     "split_confirm": "This source is too large for one Telegram pack. Split it into parts?",
     "invalid_pack_name": "The title must be 1–64 characters. Enter another title.",
-    "processing": "{icon} Recoloring…\n{done} / {total}",
+    "processing": (
+        "{icon} <b>Recoloring the material</b>\n\n"
+        "<blockquote>Processed: <b>{done} / {total}</b>\n"
+        "Preserving outlines, lighting, and transparency.</blockquote>\n\n"
+        "Please wait for processing to finish."
+    ),
+    "cancel_choose": (
+        "{icon} <b>Cancel jobs</b>\n\n"
+        "<blockquote>Active jobs: <b>{count}</b>\n{jobs}</blockquote>\n\n"
+        "Choose which jobs to stop:"
+    ),
+    "cancelled_last": "{icon} The latest job was cancelled. Temporary files were removed.",
+    "cancelled_all": (
+        "{icon} All active jobs were cancelled: <b>{count}</b>. Temporary files were removed."
+    ),
     "publishing": (
         "{icon} <b>Creating the pack in Telegram</b>\n\n"
         "{file_icon} Files prepared: <b>{prepared} / {total}</b>\n"
@@ -192,6 +206,7 @@ EN: dict[str, str] = {
         "{icon} Telegram stopped adding items to the existing pack.\n"
         "Successfully added: <b>{done} / {total}</b>. Items already added were preserved."
     ),
+    "telegram_item_rejected": "Telegram rejected the prepared file",
     "partial": "Done: {done} / {total}\nFailed: {failed}",
     "file_too_large": "The file is too large.",
     "source_invalid": "The file is empty or damaged.",

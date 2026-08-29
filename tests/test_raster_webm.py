@@ -22,6 +22,37 @@ from app.recolor.webm import ffmpeg_executable, probe_webm, recolor_webm_file
 from app.services.pipeline import ProcessingPipeline
 
 
+@pytest.mark.asyncio
+async def test_probe_webm_recovers_missing_container_timing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "timingless.webm"
+    source.write_bytes(b"\x1aE\xdf\xa3payload")
+    header = (
+        b"Duration: N/A\n"
+        b"Stream #0:0: Video: vp9 (Profile 0), yuva420p, 100x100, 1k tbn\n"
+        b"alpha_mode      : 1\n"
+    )
+    progress = b"frame=90\nout_time=00:00:03.000000\nprogress=end\n"
+    calls = 0
+
+    async def fake_run(_arguments: list[str], _timeout: float) -> tuple[int, bytes, bytes]:
+        nonlocal calls
+        calls += 1
+        return (0, b"", header) if calls == 1 else (0, progress, b"")
+
+    monkeypatch.setattr("app.recolor.webm._run_capture", fake_run)
+
+    info = await probe_webm(source)
+
+    assert info.duration == pytest.approx(3.0)
+    assert info.fps == pytest.approx(30.0)
+    assert info.width == 100 and info.height == 100
+    assert info.has_alpha
+    assert calls == 2
+
+
 def test_raster_output_dimensions_and_aspect_padding(tmp_path: Path) -> None:
     source = tmp_path / "source.png"
     destination = tmp_path / "sticker.webp"

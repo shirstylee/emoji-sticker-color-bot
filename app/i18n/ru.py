@@ -143,7 +143,21 @@ RU: dict[str, str] = {
     "existing_pack_checking": "Проверяю набор…",
     "split_confirm": "Набор слишком большой для одного Telegram-набора. Разделить на части?",
     "invalid_pack_name": "Название должно содержать от 1 до 64 символов. Введите другое.",
-    "processing": "{icon} Перекрашиваю…\n{done} / {total}",
+    "processing": (
+        "{icon} <b>Перекрашиваю материал</b>\n\n"
+        "<blockquote>Обработано: <b>{done} / {total}</b>\n"
+        "Сохраняю контуры, светотень и прозрачность.</blockquote>\n\n"
+        "Пожалуйста, дождитесь завершения обработки."
+    ),
+    "cancel_choose": (
+        "{icon} <b>Отмена задач</b>\n\n"
+        "<blockquote>Активных задач: <b>{count}</b>\n{jobs}</blockquote>\n\n"
+        "Выберите, какие задачи остановить:"
+    ),
+    "cancelled_last": "{icon} Последняя задача отменена. Временные файлы удалены.",
+    "cancelled_all": (
+        "{icon} Все активные задачи отменены: <b>{count}</b>. Временные файлы удалены."
+    ),
     "publishing": (
         "{icon} <b>Создаю набор в Telegram</b>\n\n"
         "{file_icon} Подготовлено файлов: <b>{prepared} / {total}</b>\n"
@@ -195,6 +209,7 @@ RU: dict[str, str] = {
         "{icon} Telegram остановил добавление в существующий набор.\n"
         "Успешно добавлено: <b>{done} / {total}</b>. Уже добавленные элементы сохранены."
     ),
+    "telegram_item_rejected": "Telegram отклонил подготовленный файл",
     "partial": "Готово: {done} / {total}\nНе удалось обработать: {failed}",
     "file_too_large": "Файл слишком большой.",
     "source_invalid": "Файл пустой или повреждён.",

@@ -994,7 +994,7 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
                     "existing_pack_add_failed",
                     icon=context.premium.html("ERROR"),
                     done=job.appended_items,
-                    total=job.total,
+                    total=job.publication_total,
                 )
             else:
                 body = text(
@@ -1065,8 +1065,8 @@ async def _append_existing_pack(
     custom = job.output_type == OutputType.EMOJI_PACK
     job.status = JobStatus.PUBLISHING
     job.appended_items = 0
+    job.publication_total = len(outputs)
     job.progress = 0
-    job.total = len(outputs)
     eta = await _pack_eta(context, len(outputs))
     await context.ui.edit(
         control,
@@ -1127,25 +1127,41 @@ async def _append_existing_pack(
         (path, detect_format(path), item.emoji_list)
         for item, path in outputs
     ]
-    await context.publisher.append_to_set(
+
+    async def item_error(position: int, error: Exception) -> None:
+        item = outputs[position - 1][0]
+        job.errors.append((item.index, "message_key:telegram_item_rejected"))
+        context.errors.add(
+            job_id=job.job_id,
+            component=f"existing_pack_item_{item.index}",
+            error=error,
+        )
+
+    failed = await context.publisher.append_to_set(
         user_id=job.user_id,
         name=job.target_pack_name,
         files=files,
         cancel_event=job.cancel_event,
         on_flood=flood,
         on_progress=progress,
+        on_error=item_error,
     )
+    if failed and job.appended_items == 0:
+        raise RuntimeError("Telegram rejected every prepared sticker")
     url = pack_url(job.target_pack_name, custom_emoji=custom)
+    body = text(
+        job.language,
+        "done_existing_pack",
+        icon=context.premium.html("SUCCESS"),
+        title=html.escape(job.target_pack_title or job.target_pack_name),
+        count=job.appended_items,
+        **context.premium.placeholders(),
+    )
+    if job.errors:
+        body += "\n\n" + _error_summary(job)
     await context.ui.edit(
         control,
-        text(
-            job.language,
-            "done_existing_pack",
-            icon=context.premium.html("SUCCESS"),
-            title=html.escape(job.target_pack_title or job.target_pack_name),
-            count=len(outputs),
-            **context.premium.placeholders(),
-        ),
+        body,
         reply_markup=result_keyboard(
             context.premium,
             add_url=url,
@@ -1166,8 +1182,8 @@ async def _publish_packs(
     maximum = TELEGRAM_CUSTOM_EMOJI_SET_MAX if custom else TELEGRAM_REGULAR_STICKER_SET_MAX
     title = job.pack_title or "Recolored"
     job.status = JobStatus.PUBLISHING
+    job.publication_total = len(outputs)
     job.progress = 0
-    job.total = len(outputs)
     initial_eta = await _pack_eta(context, len(outputs))
     await context.ui.edit(
         control,
@@ -1322,8 +1338,14 @@ def _error_summary(job: RuntimeJob) -> str:
         total=job.total,
         failed=len(job.errors),
     )
+    def localize_reason(reason: str) -> str:
+        prefix = "message_key:"
+        if reason.startswith(prefix):
+            return text(job.language, reason.removeprefix(prefix))
+        return html.escape(reason)
+
     details = "\n".join(
-        f"#{index}: {html.escape(reason)}" for index, reason in job.errors[:20]
+        f"#{index}: {localize_reason(reason)}" for index, reason in job.errors[:20]
     )
     if len(job.errors) > 20:
         details += f"\n… +{len(job.errors) - 20}"

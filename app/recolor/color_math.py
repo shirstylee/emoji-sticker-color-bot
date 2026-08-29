@@ -278,7 +278,14 @@ def recolor_rgb(
     if amount < 1.0:
         output_lab = source_lab + (output_lab - source_lab) * amount
     elif amount > 1.0:
-        output_lab[..., 1:3] *= 1.0 + (amount - 1.0) * 0.8
+        vivid = amount - 1.0
+        # Vivid is intentionally a dense colorization mode: unlike the normal
+        # mode, it pulls bright paint toward the selected color's lightness and
+        # keeps substantially more chroma. Dark outlines retain their mapped
+        # lightness, so shape and depth are not flattened into a solid fill.
+        highlight = np.maximum(output_lab[..., 0] - target_l, 0.0)
+        output_lab[..., 0] -= highlight * min(0.75, vivid * 1.25)
+        output_lab[..., 1:3] *= 1.0 + vivid
     output_lab = gamut_map_oklab(output_lab)
     recolored = np.clip(oklab_to_srgb(output_lab), 0.0, 1.0)
     return np.rint(recolored * 255.0).astype(np.uint8)

@@ -80,6 +80,19 @@ def _wrong_file_type(error: TelegramBadRequest) -> bool:
     return "wrong file type" in message or "sticker_file_invalid" in message
 
 
+def _sticker_content_rejection(error: TelegramBadRequest) -> bool:
+    message = str(error).lower()
+    markers = (
+        "wrong file type",
+        "sticker_file_invalid",
+        "sticker_png_dimensions",
+        "sticker_tgs_",
+        "sticker_video_",
+        "video_content_type_invalid",
+    )
+    return any(marker in message for marker in markers)
+
+
 class StickerPublisher:
     def __init__(self, bot: Bot, controller: TelegramStickerRateController) -> None:
         self.bot = bot
@@ -138,21 +151,34 @@ class StickerPublisher:
         cancel_event: asyncio.Event,
         on_flood: Callable[[float], Awaitable[None]] | None = None,
         on_progress: Callable[[int, int], Awaitable[None]] | None = None,
-    ) -> None:
+        on_error: Callable[[int, Exception], Awaitable[None]] | None = None,
+    ) -> list[int]:
         """Append prepared assets to an existing set created by this bot."""
 
         if not files:
             raise ValueError("No sticker files were provided")
-        for completed, item in enumerate(files, 1):
-            await self._add_one(
-                user_id=user_id,
-                name=name,
-                item=item,
-                cancel_event=cancel_event,
-                on_flood=on_flood,
-            )
+        failed: list[int] = []
+        completed = 0
+        for position, item in enumerate(files, 1):
+            try:
+                await self._add_one(
+                    user_id=user_id,
+                    name=name,
+                    item=item,
+                    cancel_event=cancel_event,
+                    on_flood=on_flood,
+                )
+            except TelegramBadRequest as error:
+                if not _sticker_content_rejection(error):
+                    raise
+                failed.append(position)
+                if on_error:
+                    await on_error(position, error)
+                continue
+            completed += 1
             if on_progress:
                 await on_progress(completed, len(files))
+        return failed
 
     async def publish_set(
         self,

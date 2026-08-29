@@ -38,6 +38,8 @@ BUTTON_LABELS = {
         "intensity_soft": "Бережная",
         "intensity_normal": "Обычная",
         "intensity_vivid": "Насыщенная",
+        "cancel_last": "Отменить последнюю задачу",
+        "cancel_all": "Отменить все задачи",
     },
     "en": {
         "picker": "Pick a color",
@@ -67,6 +69,8 @@ BUTTON_LABELS = {
         "intensity_soft": "Soft",
         "intensity_normal": "Normal",
         "intensity_vivid": "Vivid",
+        "cancel_last": "Cancel latest job",
+        "cancel_all": "Cancel all jobs",
     },
 }
 
@@ -264,6 +268,33 @@ def processing_keyboard(
                     style="danger",
                 )
             ]
+        ]
+    )
+
+
+def cancel_jobs_keyboard(
+    registry: PremiumEmojiRegistry, language: str = "en"
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    registry,
+                    "CANCEL",
+                    _label(language, "cancel_last"),
+                    callback_data="cancel:last",
+                    style="danger",
+                )
+            ],
+            [
+                _button(
+                    registry,
+                    "DELETE",
+                    _label(language, "cancel_all"),
+                    callback_data="cancel:all",
+                    style="danger",
+                )
+            ],
         ]
     )
 
