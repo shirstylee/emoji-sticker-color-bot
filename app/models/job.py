@@ -77,6 +77,13 @@ class RuntimeJob:
             JobStatus.AWAITING_RESULT_ACTION,
         }
 
+    @property
+    def notify_on_timeout(self) -> bool:
+        # The result has already been delivered in this state. Its optional
+        # follow-up buttons may expire silently instead of producing a confusing
+        # cleanup message long after the user finished recoloring.
+        return self.interactive and self.status != JobStatus.AWAITING_RESULT_ACTION
+
     def touch(self) -> None:
         self.last_interaction_at = datetime.now(UTC)
 

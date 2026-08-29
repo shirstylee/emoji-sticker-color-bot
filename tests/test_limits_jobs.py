@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.models.job import JobStatus
+from app.models.job import JobStatus, RuntimeJob
 from app.models.limits import LimitsConfig
 from app.services.jobs import ActiveJobError, JobManager
 from app.services.user_rate_limiter import JobWeight, RateLimitExceeded, UserRateLimiter
@@ -73,3 +73,44 @@ async def test_timeout_cleanup(tmp_path: Path) -> None:
     assert manager.get(job.job_id) is None
     assert not job.root.exists()
 
+
+@pytest.mark.asyncio
+async def test_timeout_cleans_results_silently_and_deduplicates_admin_notices(
+    tmp_path: Path,
+) -> None:
+    manager = JobManager(tmp_path / "jobs", idle_timeout_seconds=10)
+    await manager.startup_cleanup()
+    unfinished = [
+        await manager.create(user_id=2, chat_id=2, language="ru", is_admin=True)
+        for _ in range(2)
+    ]
+    delivered = await manager.create(
+        user_id=2, chat_id=2, language="ru", is_admin=True
+    )
+    for job in unfinished:
+        job.status = JobStatus.AWAITING_COLOR
+    delivered.status = JobStatus.AWAITING_RESULT_ACTION
+    expired_at = datetime.now(UTC) - timedelta(seconds=11)
+    for job in [*unfinished, delivered]:
+        job.last_interaction_at = expired_at
+
+    notifications: list[str] = []
+
+    async def notify(job: RuntimeJob) -> None:
+        assert manager.get(job.job_id) is None
+        assert not job.root.exists()
+        notifications.append(job.job_id)
+
+    manager.start_sweeper(notify)
+    now = datetime.now(UTC)
+    expired = await manager.expire_idle(now)
+    later = await manager.create(user_id=2, chat_id=2, language="ru", is_admin=True)
+    later.status = JobStatus.AWAITING_COLOR
+    later.last_interaction_at = now - timedelta(seconds=11)
+    second_expired = await manager.expire_idle(now + timedelta(seconds=1))
+    await manager.shutdown()
+
+    assert expired == 3
+    assert second_expired == 1
+    assert manager.active_count == 0
+    assert len(notifications) == 1

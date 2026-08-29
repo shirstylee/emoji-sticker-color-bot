@@ -11,7 +11,13 @@ import imageio_ffmpeg
 import numpy as np
 
 from app.constants import TELEGRAM_VIDEO_MAX_DURATION_SECONDS, TELEGRAM_VIDEO_MAX_FPS
-from app.recolor.color_math import ParsedColor, adaptive_alpha, recolor_rgb
+from app.recolor.color_math import (
+    ParsedColor,
+    adaptive_alpha,
+    recolor_rgb,
+    recolor_texture_rgb,
+)
+from app.recolor.raster import is_textured_image
 
 DURATION_RE = re.compile(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
 VIDEO_RE = re.compile(
@@ -188,6 +194,7 @@ async def recolor_webm_file(
         raise WebmError("FFmpeg streaming pipes are unavailable")
 
     async def process_frames() -> None:
+        texture_mode: bool | None = None
         while True:
             if cancel_event.is_set():
                 raise asyncio.CancelledError
@@ -216,12 +223,21 @@ async def recolor_webm_file(
                 )
                 output[..., 3] = alpha
             else:
-                output[..., :3] = await asyncio.to_thread(
-                    recolor_rgb,
-                    frame[..., :3],
-                    target,
-                    weights=alpha.astype(np.float64) / 255.0,
-                )
+                if texture_mode is None:
+                    texture_mode = await asyncio.to_thread(
+                        is_textured_image, frame[..., :3], alpha
+                    )
+                if texture_mode:
+                    output[..., :3] = await asyncio.to_thread(
+                        recolor_texture_rgb, frame[..., :3], target
+                    )
+                else:
+                    output[..., :3] = await asyncio.to_thread(
+                        recolor_rgb,
+                        frame[..., :3],
+                        target,
+                        weights=alpha.astype(np.float64) / 255.0,
+                    )
                 output[..., 3] = alpha
             encoder_stdin.write(output.tobytes())
             await encoder_stdin.drain()

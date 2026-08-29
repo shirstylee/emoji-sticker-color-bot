@@ -69,9 +69,9 @@
 
 | Формат | Что делает бот |
 |---|---|
-| `PNG` / `WEBP` | Векторизованная NumPy-обработка, OKLab, сохранение alpha и perceptual gamut mapping |
+| `PNG` / `WEBP` | OKLab/NumPy, сохранение alpha и автоматический щадящий режим для фотографической текстуры |
 | `TGS` | Безопасный разбор gzip JSON, перекраска fill/stroke, animated colors и gradients с сохранением неизвестных Lottie-полей |
-| `WEBM` | Потоковый FFmpeg decode → recolor → VP9/alpha encode без накопления всех кадров в RAM |
+| `WEBM` | Потоковый FFmpeg decode → auto texture-aware recolor → VP9/alpha encode без накопления кадров в RAM |
 | `ZIP` | Проверка traversal, абсолютных путей, symlink, nested archives, размера, числа файлов и compression ratio |
 | Unicode Emoji | Проверка одного grapheme cluster и локальный рендер системным Color Emoji font |
 

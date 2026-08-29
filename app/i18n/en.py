@@ -152,5 +152,5 @@ EN: dict[str, str] = {
     "video_too_long": "The video is longer than the 3-second limit.",
     "emoji_font_missing": "A compatible Color Emoji font is not configured on this server.",
     "service_error": "The source could not be processed. Try another file.",
-    "timeout": "The idle timeout expired. Temporary files were removed.",
+    "timeout": "An inactive unfinished job was closed and its temporary files were removed.",
 }

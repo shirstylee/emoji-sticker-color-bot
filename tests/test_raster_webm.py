@@ -10,8 +10,13 @@ from PIL import Image
 from app.config import Settings
 from app.models.job import OutputType
 from app.models.source import MediaFormat, SourceItem
-from app.recolor.color_math import parse_color
-from app.recolor.raster import fit_transparent, recolor_image, recolor_raster_file
+from app.recolor.color_math import parse_color, srgb_to_oklab
+from app.recolor.raster import (
+    fit_transparent,
+    is_textured_image,
+    recolor_image,
+    recolor_raster_file,
+)
 from app.recolor.webm import ffmpeg_executable, probe_webm, recolor_webm_file
 from app.services.pipeline import ProcessingPipeline
 
@@ -83,6 +88,55 @@ def test_existing_adaptive_emoji_gets_strong_tint_without_flattening() -> None:
     assert len({tuple(color) for color in colors.tolist()}) == 3
     assert int(colors[0].sum()) > int(colors[1].sum()) > int(colors[2].sum())
     assert np.all(result[..., 3] == 190)
+
+
+def test_texture_detector_keeps_flat_art_on_the_existing_recolor_path() -> None:
+    flat = np.zeros((96, 96, 4), dtype=np.uint8)
+    flat[..., 3] = 255
+    flat[8:88, 8:88, :3] = [230, 80, 30]
+    flat[24:72, 24:72, :3] = [30, 90, 220]
+
+    rng = np.random.default_rng(42)
+    y, x = np.mgrid[:96, :96]
+    base = np.stack(
+        (
+            92 + x * 0.7 + y * 0.15,
+            48 + x * 0.25 + y * 0.20,
+            35 + x * 0.10 + y * 0.12,
+        ),
+        axis=-1,
+    )
+    textured_rgb = np.asarray(
+        np.clip(base + rng.normal(0.0, 13.0, base.shape), 0, 255),
+        dtype=np.uint8,
+    )
+    textured_alpha = np.full((96, 96), 255, dtype=np.uint8)
+
+    assert not is_textured_image(flat[..., :3], flat[..., 3])
+    assert is_textured_image(textured_rgb, textured_alpha)
+
+
+def test_texture_recolor_preserves_lightness_black_white_and_alpha() -> None:
+    pixels = np.array(
+        [[[0, 0, 0, 77], [118, 72, 48, 180], [255, 255, 255, 255]]],
+        dtype=np.uint8,
+    )
+
+    result = np.asarray(
+        recolor_image(
+            Image.fromarray(pixels, "RGBA"),
+            parse_color("#FFEB3B"),
+            texture_mode=True,
+        )
+    )
+    source_l = srgb_to_oklab(pixels[..., :3].astype(np.float64) / 255.0)[0, :, 0]
+    result_l = srgb_to_oklab(result[..., :3].astype(np.float64) / 255.0)[0, :, 0]
+
+    np.testing.assert_array_equal(result[..., 3], pixels[..., 3])
+    np.testing.assert_array_equal(result[0, 0, :3], pixels[0, 0, :3])
+    np.testing.assert_array_equal(result[0, 2, :3], pixels[0, 2, :3])
+    assert abs(float(result_l[1] - source_l[1])) < 0.006
+    assert int(result[0, 1, 0]) > int(result[0, 1, 2])
 
 
 @pytest.mark.asyncio

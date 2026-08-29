@@ -8,11 +8,64 @@ import numpy as np
 from PIL import Image, UnidentifiedImageError
 
 from app.constants import TELEGRAM_CUSTOM_EMOJI_SIDE, TELEGRAM_REGULAR_STICKER_SIDE
-from app.recolor.color_math import ParsedColor, adaptive_alpha, recolor_rgb
+from app.recolor.color_math import (
+    ParsedColor,
+    adaptive_alpha,
+    recolor_rgb,
+    recolor_texture_rgb,
+)
 
 
 class RasterError(ValueError):
     """Raster input or output is invalid or unsafe."""
+
+
+def is_textured_image(rgb: np.ndarray, alpha: np.ndarray) -> bool:
+    """Conservatively detect photo-like texture rather than flat sticker art."""
+
+    source = np.asarray(rgb, dtype=np.uint8)
+    opacity = np.asarray(alpha, dtype=np.uint8)
+    if source.ndim != 3 or source.shape[-1] != 3 or opacity.shape != source.shape[:2]:
+        return False
+    height, width = opacity.shape
+    step = max(1, int(np.ceil(np.sqrt((height * width) / 65_536))))
+    sampled = source[::step, ::step]
+    visible = opacity[::step, ::step] > 8
+    if int(np.count_nonzero(visible)) < 256:
+        return False
+
+    quantized = sampled >> 4
+    packed = (
+        quantized[..., 0].astype(np.uint16) * 256
+        + quantized[..., 1].astype(np.uint16) * 16
+        + quantized[..., 2].astype(np.uint16)
+    )
+    counts = np.bincount(packed[visible], minlength=4096)
+    populated = counts[counts > 0]
+    if populated.size < 96:
+        return False
+    probabilities = populated.astype(np.float64) / float(populated.sum())
+    entropy = float(-np.sum(probabilities * np.log2(probabilities)))
+    if entropy < 3.6:
+        return False
+
+    normalized = sampled.astype(np.float64) / 255.0
+    luminance = (
+        normalized[..., 0] * 0.2126
+        + normalized[..., 1] * 0.7152
+        + normalized[..., 2] * 0.0722
+    )
+    horizontal = np.abs(np.diff(luminance, axis=1))
+    horizontal_visible = visible[:, 1:] & visible[:, :-1]
+    vertical = np.abs(np.diff(luminance, axis=0))
+    vertical_visible = visible[1:, :] & visible[:-1, :]
+    differences = np.concatenate(
+        (horizontal[horizontal_visible], vertical[vertical_visible])
+    )
+    if differences.size == 0:
+        return False
+    fine_detail = np.mean((differences > 0.02) & (differences < 0.25))
+    return bool(fine_detail >= 0.08)
 
 
 def load_rgba(
@@ -40,6 +93,7 @@ def recolor_image(
     *,
     adaptive: bool = False,
     strong: bool = False,
+    texture_mode: bool | None = None,
 ) -> Image.Image:
     rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8)
     alpha = rgba[..., 3].copy()
@@ -55,6 +109,11 @@ def recolor_image(
             chroma_scale=1.35,
             contrast_scale=0.62,
         )
+        output[..., 3] = alpha
+    elif texture_mode is True or (
+        texture_mode is None and is_textured_image(rgba[..., :3], alpha)
+    ):
+        output[..., :3] = recolor_texture_rgb(rgba[..., :3], target)
         output[..., 3] = alpha
     else:
         output[..., :3] = recolor_rgb(

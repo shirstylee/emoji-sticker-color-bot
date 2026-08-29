@@ -278,6 +278,53 @@ def recolor_rgb(
     return np.rint(recolored * 255.0).astype(np.uint8)
 
 
+def recolor_texture_rgb(
+    rgb: NDArray[np.uint8] | FloatArray,
+    target: ParsedColor | tuple[int, int, int],
+    *,
+    strength: float = 0.72,
+) -> NDArray[np.uint8]:
+    """Tint photo-like artwork without rebuilding its lightness range."""
+
+    source = np.asarray(rgb)
+    normalized = source.astype(np.float64)
+    if normalized.size == 0:
+        return normalized.astype(np.uint8)
+    if normalized.max(initial=0.0) > 1.0:
+        normalized /= 255.0
+    source_lab = srgb_to_oklab(np.clip(normalized, 0.0, 1.0))
+    target_rgb = target.rgb if isinstance(target, ParsedColor) else target
+    target_lab = srgb_to_oklab(np.asarray(target_rgb, dtype=np.float64) / 255.0)
+    target_chroma = float(np.hypot(target_lab[1], target_lab[2]))
+    if target_chroma < 0.012:
+        return recolor_rgb(rgb, target)
+
+    lightness = source_lab[..., 0]
+
+    def smoothstep(value: FloatArray) -> FloatArray:
+        clipped = np.clip(value, 0.0, 1.0)
+        return clipped * clipped * (3.0 - 2.0 * clipped)
+
+    # Leave ink-black backgrounds/outlines and paper-white captions alone.
+    # Everything between them receives a smooth color blend, with no hard
+    # thresholds that could create halos around fur or antialiased text.
+    dark_gate = smoothstep((lightness - 0.04) / 0.16)
+    light_gate = 1.0 - smoothstep((lightness - 0.84) / 0.14)
+    tint_weight = float(np.clip(strength, 0.0, 1.0)) * dark_gate * light_gate
+
+    direction = target_lab[1:3] / target_chroma
+    lightness_taper = np.clip(np.sin(np.pi * lightness), 0.0, 1.0) ** 0.55
+    target_ab = target_chroma * lightness_taper[..., None] * direction
+    output_lab = source_lab.copy()
+    output_lab[..., 1:3] = (
+        source_lab[..., 1:3] * (1.0 - tint_weight[..., None])
+        + target_ab * tint_weight[..., None]
+    )
+    output_lab = gamut_map_oklab(output_lab)
+    recolored = np.clip(oklab_to_srgb(output_lab), 0.0, 1.0)
+    return np.rint(recolored * 255.0).astype(np.uint8)
+
+
 def recolor_normalized_color(
     color: list[float] | tuple[float, ...],
     target: ParsedColor,

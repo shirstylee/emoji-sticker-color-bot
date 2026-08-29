@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import shutil
 import uuid
 from collections.abc import Awaitable, Callable
@@ -26,6 +27,7 @@ class JobManager:
         self._lock = asyncio.Lock()
         self._sweeper: asyncio.Task[None] | None = None
         self._timeout_callback: Callable[[RuntimeJob], Awaitable[None]] | None = None
+        self._timeout_notices: dict[int, datetime] = {}
 
     async def startup_cleanup(self) -> None:
         self._verify_temp_root()
@@ -135,10 +137,30 @@ class JobManager:
             if job.interactive
             and (current - job.last_interaction_at).total_seconds() >= self.idle_timeout_seconds
         ]
+        notifications: dict[int, RuntimeJob] = {}
+        notice_cooldown = max(300, self.idle_timeout_seconds)
+        self._timeout_notices = {
+            chat_id: timestamp
+            for chat_id, timestamp in self._timeout_notices.items()
+            if (current - timestamp).total_seconds() < notice_cooldown
+        }
         for job in expired:
-            if self._timeout_callback:
-                await self._timeout_callback(job)
+            last_notice = self._timeout_notices.get(job.chat_id)
+            may_notify = last_notice is None or (
+                current - last_notice
+            ).total_seconds() >= notice_cooldown
+            if job.notify_on_timeout and may_notify:
+                notifications.setdefault(job.chat_id, job)
+        # Remove every expired job first. A slow or failed Telegram notification
+        # must never leave it active for the next sweep and send the same notice
+        # again. Multiple admin jobs in one chat produce at most one notice.
+        for job in expired:
             await self.cancel(job.job_id)
+        if self._timeout_callback:
+            for chat_id, job in notifications.items():
+                self._timeout_notices[chat_id] = current
+                with contextlib.suppress(Exception):
+                    await self._timeout_callback(job)
         return len(expired)
 
     async def shutdown(self) -> None:
