@@ -18,6 +18,7 @@ class JobStatus(StrEnum):
     AWAITING_PREVIEW_DECISION = "awaiting_preview_decision"
     AWAITING_OUTPUT_TYPE = "awaiting_output_type"
     AWAITING_PACK_NAME = "awaiting_pack_name"
+    AWAITING_TARGET_PACK = "awaiting_target_pack"
     AWAITING_SPLIT_CONFIRMATION = "awaiting_split_confirmation"
     AWAITING_RESULT_ACTION = "awaiting_result_action"
     PROCESSING = "processing"
@@ -34,6 +35,20 @@ class OutputType(StrEnum):
     ZIP = "zip"
 
 
+class RecolorIntensity(StrEnum):
+    SOFT = "soft"
+    NORMAL = "normal"
+    VIVID = "vivid"
+
+    @property
+    def strength(self) -> float:
+        return {
+            RecolorIntensity.SOFT: 0.55,
+            RecolorIntensity.NORMAL: 1.0,
+            RecolorIntensity.VIVID: 1.25,
+        }[self]
+
+
 @dataclass(slots=True)
 class RuntimeJob:
     job_id: str
@@ -44,9 +59,14 @@ class RuntimeJob:
     is_admin: bool = False
     source: SourceDescriptor | None = None
     selected_color: str | None = None
+    intensity: RecolorIntensity = RecolorIntensity.NORMAL
     adaptive: bool = False
     output_type: OutputType | None = None
     pack_title: str | None = None
+    target_pack_name: str | None = None
+    target_pack_title: str | None = None
+    target_pack_options: list[dict[str, str]] = field(default_factory=list)
+    appended_items: int = 0
     status: JobStatus = JobStatus.SOURCE_ANALYSIS
     progress: int = 0
     total: int = 0
@@ -61,6 +81,7 @@ class RuntimeJob:
     created_sets: list[str] = field(default_factory=list)
     errors: list[tuple[int, str]] = field(default_factory=list)
     statistics_recorded: bool = False
+    last_ui_update_at: float = 0.0
 
     @property
     def short_id(self) -> str:
@@ -73,6 +94,7 @@ class RuntimeJob:
             JobStatus.AWAITING_PREVIEW_DECISION,
             JobStatus.AWAITING_OUTPUT_TYPE,
             JobStatus.AWAITING_PACK_NAME,
+            JobStatus.AWAITING_TARGET_PACK,
             JobStatus.AWAITING_SPLIT_CONFIRMATION,
             JobStatus.AWAITING_RESULT_ACTION,
         }

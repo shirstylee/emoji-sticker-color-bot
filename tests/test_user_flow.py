@@ -5,13 +5,20 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from aiogram.enums import StickerType
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import GetStickerSet
 from aiogram.types import Chat, Message, MessageEntity, User
 
 from app.handlers.commands import menu_callback, start
-from app.handlers.workflow import _looks_like_new_source, job_callback, private_message
+from app.handlers.workflow import (
+    _looks_like_new_source,
+    _select_existing_pack,
+    job_callback,
+    private_message,
+)
 from app.models.job import JobStatus
+from app.models.source import MediaFormat, SourceDescriptor, SourceItem, SourceKind
 from app.services.jobs import JobManager
 from app.services.premium_emoji import PremiumEmojiRegistry
 
@@ -222,3 +229,121 @@ async def test_processing_job_can_be_cancelled_from_inline_button(tmp_path: Path
     assert "Задача отменена" in context.ui.edit.await_args.args[1]
     assert job.cancel_event.is_set()
     assert jobs.get(job.job_id) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_admin", [False, True])
+async def test_existing_pack_selection_uses_links_for_users_and_saved_packs_for_admins(
+    tmp_path: Path,
+    is_admin: bool,
+) -> None:
+    registry = PremiumEmojiRegistry.load(Path("Main.txt"))
+    jobs = JobManager(tmp_path / ("admin-jobs" if is_admin else "user-jobs"))
+    await jobs.startup_cleanup()
+    job = await jobs.create(
+        user_id=7,
+        chat_id=7,
+        language="ru",
+        is_admin=is_admin,
+    )
+    control = Message(
+        message_id=50,
+        date=0,
+        chat=Chat(id=7, type="private"),
+        from_user=User(id=999, is_bot=True, first_name="Bot"),
+        text="Done",
+    )
+    callback = SimpleNamespace(
+        data=f"job:{job.job_id}:existing",
+        message=control,
+        from_user=SimpleNamespace(id=7),
+        answer=AsyncMock(),
+    )
+    packs = [
+        {
+            "title": "Saved pack",
+            "url": "https://t.me/addemoji/saved_by_ColorBot",
+        }
+    ]
+    admins = SimpleNamespace(
+        is_admin=AsyncMock(return_value=is_admin),
+        packs=AsyncMock(return_value=packs),
+    )
+    context = SimpleNamespace(
+        admins=admins,
+        jobs=jobs,
+        ui=SimpleNamespace(edit=AsyncMock(return_value=control)),
+        premium=registry,
+    )
+
+    await job_callback(callback, context)  # type: ignore[arg-type]
+
+    assert job.status == JobStatus.AWAITING_TARGET_PACK
+    rendered = context.ui.edit.await_args.args[1]
+    markup = context.ui.edit.await_args.kwargs["reply_markup"]
+    if is_admin:
+        assert "Выберите один из своих наборов" in rendered
+        assert markup.inline_keyboard[0][0].text == "Saved pack"
+        admins.packs.assert_awaited_once_with(7)
+    else:
+        assert "Отправьте ссылку" in rendered
+        admins.packs.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_existing_pack_accepts_aiogram_sticker_type_enum(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = PremiumEmojiRegistry.load(Path("Main.txt"))
+    jobs = JobManager(tmp_path / "jobs")
+    await jobs.startup_cleanup()
+    job = await jobs.create(user_id=7, chat_id=7, language="ru", is_admin=False)
+    job.source = SourceDescriptor(
+        kind=SourceKind.CUSTOM_EMOJI,
+        items=[SourceItem(1, tmp_path / "one.webp", MediaFormat.WEBP)],
+    )
+    sticker_set = SimpleNamespace(
+        sticker_type=StickerType.CUSTOM_EMOJI,
+        stickers=[SimpleNamespace(needs_repainting=False)],
+        title="Existing",
+    )
+    start_processing = AsyncMock()
+    monkeypatch.setattr("app.handlers.workflow._start_processing", start_processing)
+    control = Message(
+        message_id=50,
+        date=0,
+        chat=Chat(id=7, type="private"),
+        from_user=User(id=999, is_bot=True, first_name="Bot"),
+        text="Choose",
+    )
+    context = SimpleNamespace(
+        bot_username="ColorBot",
+        bot=SimpleNamespace(get_sticker_set=AsyncMock(return_value=sticker_set)),
+        ui=SimpleNamespace(edit=AsyncMock(return_value=control), answer=AsyncMock()),
+        premium=registry,
+    )
+
+    accepted = await _select_existing_pack(
+        control,
+        job,
+        context,  # type: ignore[arg-type]
+        "https://t.me/addemoji/existing_by_ColorBot",
+    )
+
+    assert accepted
+    assert job.target_pack_name == "existing_by_ColorBot"
+    start_processing.assert_awaited_once_with(control, job, context)
+
+    job.adaptive = True
+    sticker_set.sticker_type = StickerType.REGULAR
+    rejected = await _select_existing_pack(
+        control,
+        job,
+        context,  # type: ignore[arg-type]
+        "https://t.me/addstickers/existing_by_ColorBot",
+    )
+
+    assert not rejected
+    assert "Adaptive Emoji" in context.ui.answer.await_args.args[1]
+    start_processing.assert_awaited_once()

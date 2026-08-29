@@ -15,7 +15,7 @@ from app.constants import (
     TELEGRAM_TGS_MAX_BYTES,
     TELEGRAM_WEBM_MAX_BYTES,
 )
-from app.models.job import OutputType, RuntimeJob
+from app.models.job import OutputType, RecolorIntensity, RuntimeJob
 from app.models.source import MediaFormat, SourceItem
 from app.recolor.color_math import parse_color
 from app.recolor.raster import recolor_raster_file
@@ -66,6 +66,7 @@ class ProcessingPipeline:
         target = parse_color(job.selected_color or "#000000")
         adaptive = bool(getattr(job, "adaptive", False))
         strong = bool(item.needs_repainting and not adaptive)
+        intensity = getattr(job, "intensity", RecolorIntensity.NORMAL).strength
         output_type = job.output_type or OutputType.FILE
         directory = job.root / ("preview" if preview else "processed")
         destination = directory / f"{item.index:03d}{output_extension(item, output_type)}"
@@ -108,6 +109,7 @@ class ProcessingPipeline:
                     max_pixels=self.settings.max_raster_pixels,
                     adaptive=adaptive,
                     strong=strong,
+                    intensity=intensity,
                 )
 
             result = await self.scheduler.submit(
@@ -133,6 +135,7 @@ class ProcessingPipeline:
                     max_decompressed=self.settings.max_tgs_json,
                     adaptive=adaptive,
                     strong=strong,
+                    intensity=intensity,
                 )
                 if result.stat().st_size > TELEGRAM_TGS_MAX_BYTES:
                     result.unlink(missing_ok=True)
@@ -169,6 +172,7 @@ class ProcessingPipeline:
                     timeout=self.settings.ffmpeg_timeout_seconds,
                     adaptive=adaptive,
                     strong=strong,
+                    intensity=intensity,
                 )
 
             result = await self.scheduler.submit(
@@ -206,6 +210,7 @@ class ProcessingPipeline:
                 else None,
                 adaptive=adaptive,
                 strong=strong,
+                intensity=intensity,
             )
 
         result = await self.scheduler.submit(

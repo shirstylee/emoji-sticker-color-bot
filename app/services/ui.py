@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.services.premium_emoji import PremiumEmojiRegistry
@@ -69,10 +69,23 @@ class SafeUI:
         text: str,
         *,
         reply_markup: InlineKeyboardMarkup | None = None,
+        retry_as_answer: bool = True,
         **kwargs: Any,
     ) -> Message | bool:
         try:
             return await message.edit_text(text, reply_markup=reply_markup, **kwargs)
+        except TelegramRetryAfter:
+            # A cosmetic status edit must never abort rendering or pack
+            # publication. Important prompts/results are delivered as a fresh
+            # message; high-frequency progress updates opt out to avoid spam.
+            if not retry_as_answer:
+                return message
+            return await self.answer(
+                message,
+                text,
+                reply_markup=reply_markup,
+                **kwargs,
+            )
         except TelegramBadRequest as error:
             if message_not_modified(error):
                 return message

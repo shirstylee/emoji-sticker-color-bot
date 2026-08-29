@@ -90,3 +90,22 @@ def test_colored_recolor_removes_source_hue() -> None:
     lab = srgb_to_oklab(output.astype(np.float64) / 255.0)[0]
     hues = np.arctan2(lab[:, 2], lab[:, 1])
     assert float(np.ptp(hues)) < 0.02
+
+
+def test_recolor_intensity_controls_distance_from_source() -> None:
+    source = np.array([[[230, 225, 215], [150, 120, 90], [40, 35, 30]]], dtype=np.uint8)
+    target = parse_color("#9C27B0")
+
+    soft = recolor_rgb(source, target, strength=0.55)
+    normal = recolor_rgb(source, target, strength=1.0)
+
+    source_lab = srgb_to_oklab(source.astype(np.float64) / 255.0)
+    soft_distance = np.linalg.norm(
+        srgb_to_oklab(soft.astype(np.float64) / 255.0) - source_lab
+    )
+    normal_distance = np.linalg.norm(
+        srgb_to_oklab(normal.astype(np.float64) / 255.0) - source_lab
+    )
+
+    assert soft_distance < normal_distance
+    assert not np.array_equal(soft, source)

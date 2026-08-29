@@ -438,7 +438,7 @@ def _transform_slots(document: dict[str, Any], transform: Any) -> None:
 
 
 def strong_tint_tgs_document(
-    document: dict[str, Any], target: ParsedColor
+    document: dict[str, Any], target: ParsedColor, *, strength: float = 1.0
 ) -> dict[str, Any]:
     output = copy.deepcopy(document)
     colors: list[list[float]] = []
@@ -453,6 +453,7 @@ def strong_tint_tgs_document(
             source_midpoint=midpoint,
             chroma_scale=1.35,
             contrast_scale=0.62,
+            strength=strength,
         )
 
     _transform_walk(output, transform)
@@ -756,14 +757,28 @@ def adaptive_tgs_document(document: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
-def recolor_tgs_document(document: dict[str, Any], target: ParsedColor) -> dict[str, Any]:
+def recolor_tgs_document(
+    document: dict[str, Any], target: ParsedColor, *, strength: float = 1.0
+) -> dict[str, Any]:
     output = copy.deepcopy(document)
     colors: list[list[float]] = []
     _collect_walk(output, colors)
     _collect_slot_colors(output, colors)
     midpoint = palette_lightness_midpoint(colors)
-    _walk(output, target, midpoint)
-    _recolor_slots(output, target, midpoint)
+    if strength == 1.0:
+        _walk(output, target, midpoint)
+        _recolor_slots(output, target, midpoint)
+    else:
+        def transform(color: list[float]) -> list[float]:
+            return recolor_normalized_color(
+                color,
+                target,
+                source_midpoint=midpoint,
+                strength=strength,
+            )
+
+        _transform_walk(output, transform)
+        _transform_slots(output, transform)
     return output
 
 
@@ -787,6 +802,7 @@ def recolor_tgs_file(
     max_decompressed: int,
     adaptive: bool = False,
     strong: bool = False,
+    intensity: float = 1.0,
 ) -> Path:
     document = load_tgs(
         source,
@@ -797,7 +813,7 @@ def recolor_tgs_file(
     if adaptive:
         result = adaptive_tgs_document(normalized)
     elif strong:
-        result = strong_tint_tgs_document(normalized, target)
+        result = strong_tint_tgs_document(normalized, target, strength=intensity)
     else:
-        result = recolor_tgs_document(normalized, target)
+        result = recolor_tgs_document(normalized, target, strength=intensity)
     return save_tgs(result, destination)

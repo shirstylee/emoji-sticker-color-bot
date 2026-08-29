@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.methods import EditMessageText
 
 from app.handlers.admin import _admin_action_keyboard
@@ -14,6 +14,7 @@ from app.i18n.ru import RU
 from app.keyboards.admin import admin_keyboard
 from app.keyboards.user import (
     color_keyboard,
+    existing_pack_keyboard,
     information_keyboard,
     language_keyboard,
     main_menu_keyboard,
@@ -115,6 +116,7 @@ def test_rich_messages_render_with_real_premium_emoji(
         "eta": "00:15",
         "formats": "TGS: 1",
         "color": "#2196F3",
+        "intensity": "Обычная",
         "pack_list": "Example pack",
         **registry.placeholders(),
     }
@@ -129,8 +131,10 @@ def test_rich_messages_render_with_real_premium_emoji(
         "pack_choose_output": 4,
         "preview_ready": 2,
         "publishing": 4,
+        "publishing_existing": 4,
         "done_file": 2,
         "done_pack": 5,
+        "done_existing_pack": 3,
     }
     for catalog in (RU, EN):
         for key, expected_count in expected_icon_counts.items():
@@ -150,13 +154,24 @@ def test_single_result_and_information_actions(
     registry: PremiumEmojiRegistry,
 ) -> None:
     result = single_result_keyboard(registry, "job", "ru")
-    assert [row[0].callback_data for row in result.inline_keyboard] == [
+    callbacks = [
+        button.callback_data
+        for row in result.inline_keyboard
+        for button in row
+        if button.callback_data
+    ]
+    assert callbacks == [
         "job:job:single_pack",
+        "job:job:existing",
+        "job:job:intensity:soft",
+        "job:job:intensity:normal",
+        "job:job:intensity:vivid",
         "job:job:restart",
         "job:job:home",
     ]
-    assert all("download" not in (row[0].callback_data or "") for row in result.inline_keyboard)
+    assert all("download" not in callback for callback in callbacks)
     assert result.inline_keyboard[0][0].style == "primary"
+    assert result.inline_keyboard[2][1].style == "primary"
     assert result.inline_keyboard[-1][0].text == "Главное меню"
 
     completed = result_keyboard(registry, add_url="https://t.me/addemoji/example", language="ru")
@@ -167,6 +182,26 @@ def test_single_result_and_information_actions(
     assert str(information.inline_keyboard[0][0].url) == "https://t.me/jawface"
     assert information.inline_keyboard[0][0].style == "primary"
     assert information.inline_keyboard[1][0].callback_data == "menu:home"
+
+
+def test_admin_existing_pack_keyboard_lists_saved_packs(
+    registry: PremiumEmojiRegistry,
+) -> None:
+    keyboard = existing_pack_keyboard(
+        registry,
+        "job",
+        [
+            {"title": "First", "url": "https://t.me/addemoji/first_by_ColorBot"},
+            {"title": "Second", "url": "https://t.me/addstickers/second_by_ColorBot"},
+        ],
+        "ru",
+    )
+    assert [row[0].callback_data for row in keyboard.inline_keyboard] == [
+        "job:job:existing_saved:0",
+        "job:job:existing_saved:1",
+        "job:job:existing_link",
+        "job:job:cancel",
+    ]
 
 
 def test_admin_panel_has_back_to_main_menu(registry: PremiumEmojiRegistry) -> None:
@@ -239,3 +274,27 @@ async def test_identical_edit_is_a_benign_noop(registry: PremiumEmojiRegistry) -
     result = await ui.edit(message, "same")  # type: ignore[arg-type]
     assert result is message
     message.edit_text.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_edit_retry_after_does_not_abort_background_work(
+    registry: PremiumEmojiRegistry,
+) -> None:
+    retry = TelegramRetryAfter(
+        method=EditMessageText(chat_id=1, message_id=1, text="progress"),
+        message="Too Many Requests",
+        retry_after=506,
+    )
+    fresh = SimpleNamespace(message_id=2)
+    message = SimpleNamespace(
+        edit_text=AsyncMock(side_effect=retry),
+        answer=AsyncMock(return_value=fresh),
+    )
+    ui = SafeUI(registry)
+
+    skipped = await ui.edit(message, "progress", retry_as_answer=False)  # type: ignore[arg-type]
+    delivered = await ui.edit(message, "done")  # type: ignore[arg-type]
+
+    assert skipped is message
+    assert delivered is fresh
+    message.answer.assert_awaited_once()

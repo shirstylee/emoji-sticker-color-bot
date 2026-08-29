@@ -104,13 +104,40 @@ EN: dict[str, str] = {
     ),
     "preview_ready": (
         "{icon} A preview of the first item is ready.\n"
-        "{color_icon} Outlines and lighting are preserved. Continue?"
+        "{color_icon} Outlines and lighting are preserved.\n"
+        "Intensity: <b>{intensity}</b>. Continue?"
     ),
     "adaptive_preview": (
         "{icon} The shape is ready. Telegram chooses the actual Adaptive Emoji color based on "
         "where it is used and the current theme."
     ),
     "enter_pack_name": "Enter a title for the new pack (1–64 characters).",
+    "existing_pack_link_prompt": (
+        "Send a link to an existing pack. It must be a pack this bot created for your account."
+    ),
+    "existing_pack_admin_prompt": (
+        "Choose one of your packs created in the bot, or send another link."
+    ),
+    "existing_pack_invalid_link": (
+        "The link was not recognized. Send a link in the form "
+        "<code>https://t.me/addemoji/...</code> or "
+        "<code>https://t.me/addstickers/...</code>."
+    ),
+    "existing_pack_wrong_bot": (
+        "This pack was created by another bot. Telegram only lets a bot edit packs it created."
+    ),
+    "existing_pack_unavailable": "Telegram could not find this pack or denied access to it.",
+    "existing_pack_type_mismatch": (
+        "The link type does not match the pack type, or this pack cannot be updated."
+    ),
+    "existing_pack_full": (
+        "The pack already contains {current} items; {incoming} are being added, while "
+        "Telegram's limit is {maximum}. Choose another pack."
+    ),
+    "existing_pack_adaptive_mismatch": (
+        "Regular and Adaptive Emoji cannot be mixed in one pack. Choose a compatible pack."
+    ),
+    "existing_pack_checking": "Checking the pack…",
     "split_confirm": "This source is too large for one Telegram pack. Split it into parts?",
     "invalid_pack_name": "The title must be 1–64 characters. Enter another title.",
     "processing": "{icon} Recoloring…\n{done} / {total}",
@@ -118,6 +145,12 @@ EN: dict[str, str] = {
         "{icon} <b>Creating the pack in Telegram</b>\n\n"
         "{file_icon} Files prepared: <b>{prepared} / {total}</b>\n"
         "{pack_icon} Items added: <b>{done} / {total}</b>\n"
+        "{time_icon} Estimated readiness: in <code>{eta}</code>"
+    ),
+    "publishing_existing": (
+        "{icon} <b>Adding to an existing pack</b>\n\n"
+        "{pack_icon} Pack: {title}\n"
+        "{file_icon} Items added: <b>{done} / {total}</b>\n"
         "{time_icon} Estimated readiness: in <code>{eta}</code>"
     ),
     "flood_wait": (
@@ -134,10 +167,14 @@ EN: dict[str, str] = {
     ),
     "single_result_ready": (
         "{icon} <b>Done</b>\n\n{color_icon} Color: <code>{color}</code>\n"
+        "Intensity: <b>{intensity}</b>\n"
         "{sticker_icon} The result was sent as a sticker.\n\n"
-        "{info_icon} You can add it to a new Emoji Pack or download the source file."
+        "{info_icon} You can add it to a new or existing Emoji Pack."
     ),
     "preparing_download": "{icon} Preparing the downloadable file…",
+    "intensity_soft": "Soft",
+    "intensity_normal": "Normal",
+    "intensity_vivid": "Vivid",
     "done_file": (
         "{icon} Done. Color: <code>{color}</code>\n"
         "{download_icon} The file was sent above."
@@ -146,6 +183,14 @@ EN: dict[str, str] = {
         "{icon} <b>Pack ready</b>\n\n{edit_icon} Title: {title}\n"
         "{info_icon} Type: {kind}\n{file_icon} Items: {count}\n"
         "{color_icon} Color: <code>{color}</code>"
+    ),
+    "done_existing_pack": (
+        "{icon} <b>Done</b>\n\n{pack_icon} Pack: {title}\n"
+        "{file_icon} Items added: <b>{count}</b>"
+    ),
+    "existing_pack_add_failed": (
+        "{icon} Telegram stopped adding items to the existing pack.\n"
+        "Successfully added: <b>{done} / {total}</b>. Items already added were preserved."
     ),
     "partial": "Done: {done} / {total}\nFailed: {failed}",
     "file_too_large": "The file is too large.",

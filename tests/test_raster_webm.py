@@ -8,6 +8,7 @@ import pytest
 from PIL import Image
 
 from app.config import Settings
+from app.constants import TELEGRAM_VIDEO_SAFE_DURATION_SECONDS
 from app.models.job import OutputType
 from app.models.source import MediaFormat, SourceItem
 from app.recolor.color_math import parse_color, srgb_to_oklab
@@ -273,7 +274,7 @@ async def test_streaming_webm_pipeline(tmp_path: Path) -> None:
         "lavfi",
         "-i",
         (
-            "color=c=black@0.0:s=64x32:d=0.25:r=10,format=rgba,"
+            "color=c=black@0.0:s=64x32:d=3.0:r=10,format=rgba,"
             "drawbox=x=16:y=8:w=32:h=16:color=red@1.0:t=fill:replace=1"
         ),
         "-an",
@@ -301,6 +302,7 @@ async def test_streaming_webm_pipeline(tmp_path: Path) -> None:
     output = await probe_webm(destination)
     assert output.width <= 100 and output.height <= 100
     assert output.fps <= 30
+    assert output.duration <= TELEGRAM_VIDEO_SAFE_DURATION_SECONDS + 0.01
     assert destination.stat().st_size > 0
 
     decoded = tmp_path / "output.rgba"

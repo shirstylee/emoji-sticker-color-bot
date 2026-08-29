@@ -204,6 +204,37 @@ async def test_pack_creation_batches_initial_eight_and_reports_live_progress(
 
 
 @pytest.mark.asyncio
+async def test_append_to_existing_set_reports_each_success(tmp_path: Path) -> None:
+    class FakeBot:
+        def __init__(self) -> None:
+            self.names: list[str] = []
+
+        async def add_sticker_to_set(self, **kwargs: object) -> bool:
+            self.names.append(str(kwargs["name"]))
+            return True
+
+    bot = FakeBot()
+    controller = TelegramStickerRateController(conservative_enabled=False)
+    publisher = StickerPublisher(bot, controller)  # type: ignore[arg-type]
+    progress: list[tuple[int, int]] = []
+    files = [
+        (tmp_path / f"{index}.webp", MediaFormat.WEBP, ("🎨",))
+        for index in range(2)
+    ]
+
+    await publisher.append_to_set(
+        user_id=1,
+        name="saved_by_ColorBot",
+        files=files,
+        cancel_event=asyncio.Event(),
+        on_progress=lambda done, total: _append_progress(progress, done, total),
+    )
+
+    assert bot.names == ["saved_by_ColorBot", "saved_by_ColorBot"]
+    assert progress == [(1, 2), (2, 2)]
+
+
+@pytest.mark.asyncio
 async def test_conservative_pack_window_counts_items_and_skips_chat_sends(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

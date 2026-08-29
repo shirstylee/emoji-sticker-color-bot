@@ -26,6 +26,7 @@ from app.i18n import text
 from app.keyboards.user import (
     adaptive_preview_keyboard,
     color_keyboard,
+    existing_pack_keyboard,
     output_keyboard,
     pack_name_keyboard,
     preview_keyboard,
@@ -35,13 +36,14 @@ from app.keyboards.user import (
     split_keyboard,
 )
 from app.logging import safe_error
-from app.models.job import JobStatus, OutputType, RuntimeJob
+from app.models.job import JobStatus, OutputType, RecolorIntensity, RuntimeJob
 from app.models.source import MediaFormat, SourceItem, SourceKind
 from app.recolor.color_math import parse_color
 from app.services.archive import split_output_zip
 from app.services.jobs import ActiveJobError
 from app.services.source_resolver import (
     SourceError,
+    find_pack_link,
     message_pack_link,
     resolve_media_group,
     resolve_message,
@@ -89,6 +91,14 @@ async def _show_flood_wait(
     prepared: int | None = None,
 ) -> None:
     try:
+        now = time.monotonic()
+        if (
+            remaining > 5
+            and job.last_ui_update_at > 0
+            and now - job.last_ui_update_at < 15
+        ):
+            return
+        job.last_ui_update_at = now
         completed = job.progress if done is None else done
         expected_total = job.total if total is None else total
         eta = await _pack_eta(
@@ -112,6 +122,7 @@ async def _show_flood_wait(
             reply_markup=processing_keyboard(
                 context.premium, job.job_id, job.language
             ),
+            retry_as_answer=False,
         )
     except Exception:
         return
@@ -335,6 +346,12 @@ async def private_message(message: Message, context: AppContext) -> None:
             await _handle_color_text(message, job, context)
             return
         if (
+            job.status == JobStatus.AWAITING_TARGET_PACK
+            and message.text
+        ):
+            await _handle_existing_pack_link(message, job, context)
+            return
+        if (
             job.status == JobStatus.AWAITING_PACK_NAME
             and message.text
             and not _looks_like_new_source(message)
@@ -407,6 +424,52 @@ async def _send_preview(
     job.preview_message_id = preview.message_id
 
 
+def _intensity_label(job: RuntimeJob) -> str:
+    return text(job.language, f"intensity_{job.intensity.value}")
+
+
+async def _render_preview(
+    control: Message, job: RuntimeJob, context: AppContext
+) -> None:
+    if job.source is None:
+        return
+    job.status = JobStatus.GENERATING_PREVIEW
+    preview_error: Exception | None = None
+    for preview_item in job.source.items:
+        try:
+            path = await context.pipeline.process_item(job, preview_item, preview=True)
+            preview_format = (
+                MediaFormat.PNG if path.suffix.lower() == ".png" else preview_item.format
+            )
+            await _send_preview(control, job, path, preview_format, context)
+            preview_error = None
+            break
+        except Exception as error:
+            preview_error = error
+    if preview_error is not None:
+        context.errors.add(job_id=job.job_id, component="preview", error=preview_error)
+        await _source_error(control, job.language, context, preview_error)
+        job.status = JobStatus.AWAITING_COLOR
+        return
+    job.status = JobStatus.AWAITING_PREVIEW_DECISION
+    await context.ui.edit(
+        control,
+        text(
+            job.language,
+            "preview_ready",
+            icon=context.premium.html("PREVIEW"),
+            intensity=_intensity_label(job),
+            **context.premium.placeholders(),
+        ),
+        reply_markup=preview_keyboard(
+            context.premium,
+            job.job_id,
+            job.language,
+            job.intensity,
+        ),
+    )
+
+
 async def _select_color(
     control: Message, job: RuntimeJob, color_value: str, context: AppContext
 ) -> None:
@@ -439,35 +502,7 @@ async def _select_color(
         )
         job.processing_task = task
         return
-    job.status = JobStatus.GENERATING_PREVIEW
-    preview_error: Exception | None = None
-    for preview_item in job.source.items:
-        try:
-            path = await context.pipeline.process_item(job, preview_item, preview=True)
-            preview_format = (
-                MediaFormat.PNG if path.suffix.lower() == ".png" else preview_item.format
-            )
-            await _send_preview(control, job, path, preview_format, context)
-            preview_error = None
-            break
-        except Exception as error:
-            preview_error = error
-    if preview_error is not None:
-        context.errors.add(job_id=job.job_id, component="preview", error=preview_error)
-        await _source_error(control, job.language, context, preview_error)
-        job.status = JobStatus.AWAITING_COLOR
-        return
-    job.status = JobStatus.AWAITING_PREVIEW_DECISION
-    await context.ui.edit(
-        control,
-        text(
-            job.language,
-            "preview_ready",
-            icon=context.premium.html("PREVIEW"),
-            **context.premium.placeholders(),
-        ),
-        reply_markup=preview_keyboard(context.premium, job.job_id, job.language),
-    )
+    await _render_preview(control, job, context)
 
 
 async def _handle_color_text(message: Message, job: RuntimeJob, context: AppContext) -> None:
@@ -532,6 +567,181 @@ async def _request_pack_name(control: Message, job: RuntimeJob, context: AppCont
     )
 
 
+async def _show_existing_pack_link_prompt(
+    control: Message, job: RuntimeJob, context: AppContext
+) -> None:
+    job.status = JobStatus.AWAITING_TARGET_PACK
+    await context.ui.edit(
+        control,
+        f'{context.premium.html("LINK")} '
+        + text(job.language, "existing_pack_link_prompt"),
+        reply_markup=pack_name_keyboard(
+            context.premium,
+            job.job_id,
+            source_title=False,
+            language=job.language,
+        ),
+    )
+
+
+async def _request_existing_pack(
+    control: Message, job: RuntimeJob, context: AppContext
+) -> None:
+    job.status = JobStatus.AWAITING_TARGET_PACK
+    job.target_pack_name = None
+    job.target_pack_title = None
+    job.target_pack_options = []
+    if job.is_admin:
+        job.target_pack_options = (await context.admins.packs(job.user_id))[-12:]
+    if not job.target_pack_options:
+        await _show_existing_pack_link_prompt(control, job, context)
+        return
+    await context.ui.edit(
+        control,
+        f'{context.premium.html("PACK")} '
+        + text(job.language, "existing_pack_admin_prompt"),
+        reply_markup=existing_pack_keyboard(
+            context.premium,
+            job.job_id,
+            job.target_pack_options,
+            job.language,
+        ),
+    )
+
+
+async def _select_existing_pack(
+    control: Message,
+    job: RuntimeJob,
+    context: AppContext,
+    value: str,
+) -> bool:
+    parsed = find_pack_link(value)
+    if parsed is None:
+        await context.ui.answer(
+            control,
+            f'{context.premium.html("ERROR")} '
+            + text(job.language, "existing_pack_invalid_link"),
+        )
+        return False
+    route, name = parsed
+    suffix = f"_by_{context.bot_username}".lower()
+    if not name.lower().endswith(suffix):
+        await context.ui.answer(
+            control,
+            f'{context.premium.html("ERROR")} '
+            + text(job.language, "existing_pack_wrong_bot"),
+        )
+        return False
+    try:
+        sticker_set = await context.bot.get_sticker_set(name)
+    except Exception:
+        await context.ui.answer(
+            control,
+            f'{context.premium.html("ERROR")} '
+            + text(job.language, "existing_pack_unavailable"),
+        )
+        return False
+    raw_sticker_type = sticker_set.sticker_type
+    sticker_type = str(getattr(raw_sticker_type, "value", raw_sticker_type))
+    if sticker_type == "mask" or (
+        route == "addemoji" and sticker_type != "custom_emoji"
+    ) or (route == "addstickers" and sticker_type != "regular"):
+        await context.ui.answer(
+            control,
+            f'{context.premium.html("ERROR")} '
+            + text(job.language, "existing_pack_type_mismatch"),
+        )
+        return False
+    custom = sticker_type == "custom_emoji"
+    if job.adaptive and not custom:
+        await context.ui.answer(
+            control,
+            f'{context.premium.html("ERROR")} '
+            + text(job.language, "existing_pack_adaptive_mismatch"),
+        )
+        return False
+    maximum = TELEGRAM_CUSTOM_EMOJI_SET_MAX if custom else TELEGRAM_REGULAR_STICKER_SET_MAX
+    incoming = len(job.source.items) if job.source else 0
+    if len(sticker_set.stickers) + incoming > maximum:
+        await context.ui.answer(
+            control,
+            f'{context.premium.html("ERROR")} '
+            + text(
+                job.language,
+                "existing_pack_full",
+                current=len(sticker_set.stickers),
+                incoming=incoming,
+                maximum=maximum,
+            ),
+        )
+        return False
+    target_adaptive = bool(
+        sticker_set.stickers and sticker_set.stickers[0].needs_repainting
+    )
+    if custom and target_adaptive != job.adaptive:
+        await context.ui.answer(
+            control,
+            f'{context.premium.html("ERROR")} '
+            + text(job.language, "existing_pack_adaptive_mismatch"),
+        )
+        return False
+    job.target_pack_name = name
+    job.target_pack_title = sticker_set.title
+    job.output_type = OutputType.EMOJI_PACK if custom else OutputType.STICKER_PACK
+    job.appended_items = 0
+    await context.ui.edit(
+        control,
+        text(
+            job.language,
+            "processing",
+            icon=context.premium.html("LOADING"),
+            done=0,
+            total=max(1, incoming),
+        ),
+        reply_markup=processing_keyboard(context.premium, job.job_id, job.language),
+    )
+    await _start_processing(control, job, context)
+    return True
+
+
+async def _handle_existing_pack_link(
+    message: Message, job: RuntimeJob, context: AppContext
+) -> None:
+    control: Message | None = None
+    if job.control_message_id is not None:
+        try:
+            edited = await context.bot.edit_message_text(
+                chat_id=job.chat_id,
+                message_id=job.control_message_id,
+                text=f'{context.premium.html("LOADING")} '
+                + text(job.language, "existing_pack_checking"),
+                reply_markup=processing_keyboard(
+                    context.premium, job.job_id, job.language
+                ),
+            )
+            if isinstance(edited, Message):
+                control = edited
+        except Exception:
+            control = None
+    if control is None:
+        control = await context.ui.answer(
+            message,
+            f'{context.premium.html("LOADING")} '
+            + text(job.language, "existing_pack_checking"),
+            reply_markup=processing_keyboard(
+                context.premium, job.job_id, job.language
+            ),
+        )
+        job.control_message_id = control.message_id
+    accepted = await _select_existing_pack(
+        control, job, context, message.text or ""
+    )
+    if not accepted:
+        await _show_existing_pack_link_prompt(control, job, context)
+    with contextlib.suppress(Exception):
+        await message.delete()
+
+
 async def _handle_pack_name(message: Message, job: RuntimeJob, context: AppContext) -> None:
     title = (message.text or "").strip()
     if not 1 <= len(title) <= 64:
@@ -583,7 +793,12 @@ async def _handle_pack_name(message: Message, job: RuntimeJob, context: AppConte
 async def _start_processing(control: Message, job: RuntimeJob, context: AppContext) -> None:
     if job.source is None or job.output_type is None:
         return
-    if job.output_type in {OutputType.EMOJI_PACK, OutputType.STICKER_PACK}:
+    if job.processing_task is not None and not job.processing_task.done():
+        return
+    if (
+        job.output_type in {OutputType.EMOJI_PACK, OutputType.STICKER_PACK}
+        and job.target_pack_name is None
+    ):
         maximum = (
             TELEGRAM_CUSTOM_EMOJI_SET_MAX
             if job.output_type == OutputType.EMOJI_PACK
@@ -625,7 +840,8 @@ async def _run_single_result(
         delivery_path, delivery_format = await context.pipeline.prepare_chat_sticker(
             job, path, detect_format(path)
         )
-        await context.publisher.send_sticker_file(
+        await _delete_old_preview(job, context)
+        delivered = await context.publisher.send_sticker_file(
             chat_id=job.chat_id,
             path=delivery_path,
             media_format=delivery_format,
@@ -634,6 +850,7 @@ async def _run_single_result(
                 control, job, context, remaining, done=1, total=1
             ),
         )
+        job.preview_message_id = delivered.message_id
         job.status = JobStatus.AWAITING_RESULT_ACTION
         await context.ui.edit(
             control,
@@ -642,10 +859,11 @@ async def _run_single_result(
                 "single_result_ready",
                 icon=context.premium.html("SUCCESS"),
                 color=job.selected_color or "Adaptive",
+                intensity=_intensity_label(job),
                 **context.premium.placeholders(),
             ),
             reply_markup=single_result_keyboard(
-                context.premium, job.job_id, job.language
+                context.premium, job.job_id, job.language, job.intensity
             ),
         )
         if not job.statistics_recorded:
@@ -688,7 +906,7 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
     async def progress(done: int, total: int) -> None:
         nonlocal last_progress
         now = time.monotonic()
-        if now - last_progress < 1.7 and done != total:
+        if now - last_progress < 5.0 and done != total:
             return
         last_progress = now
         try:
@@ -704,6 +922,7 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
                 reply_markup=processing_keyboard(
                     context.premium, job.job_id, job.language
                 ),
+                retry_as_answer=False,
             )
         except Exception:
             return
@@ -736,6 +955,8 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
             )
         elif job.output_type == OutputType.ZIP:
             await _deliver_zip(control, job, [path for _, path in outputs], context)
+        elif job.target_pack_name is not None:
+            await _append_existing_pack(control, job, outputs, context)
         else:
             await _publish_packs(control, job, outputs, context)
         formats = [item.format for item, _ in outputs]
@@ -767,7 +988,20 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
                 processing_ms=round((time.monotonic() - started) * 1000),
             )
         with contextlib.suppress(Exception):
-            body = text(job.language, "service_error", icon=context.premium.html("ERROR"))
+            if job.target_pack_name is not None:
+                body = text(
+                    job.language,
+                    "existing_pack_add_failed",
+                    icon=context.premium.html("ERROR"),
+                    done=job.appended_items,
+                    total=job.total,
+                )
+            else:
+                body = text(
+                    job.language,
+                    "service_error",
+                    icon=context.premium.html("ERROR"),
+                )
             if job.errors:
                 body += "\n\n" + _error_summary(job)
             await context.ui.edit(
@@ -817,6 +1051,106 @@ async def _deliver_zip(
         control,
         body,
         reply_markup=result_keyboard(context.premium, language=job.language),
+    )
+
+
+async def _append_existing_pack(
+    control: Message,
+    job: RuntimeJob,
+    outputs: list[tuple[SourceItem, Path]],
+    context: AppContext,
+) -> None:
+    if job.target_pack_name is None or job.output_type is None:
+        raise RuntimeError("Existing target pack is missing")
+    custom = job.output_type == OutputType.EMOJI_PACK
+    job.status = JobStatus.PUBLISHING
+    job.appended_items = 0
+    job.progress = 0
+    job.total = len(outputs)
+    eta = await _pack_eta(context, len(outputs))
+    await context.ui.edit(
+        control,
+        text(
+            job.language,
+            "publishing_existing",
+            icon=context.premium.html("UPLOAD"),
+            title=html.escape(job.target_pack_title or job.target_pack_name),
+            done=0,
+            total=len(outputs),
+            eta=eta,
+            **context.premium.placeholders(),
+        ),
+        reply_markup=processing_keyboard(context.premium, job.job_id, job.language),
+    )
+    last_update = 0.0
+
+    async def progress(done: int, total: int) -> None:
+        nonlocal last_update
+        job.appended_items = done
+        job.progress = done
+        now = time.monotonic()
+        if now - last_update < 5.0 and done != total:
+            return
+        last_update = now
+        remaining_eta = await _pack_eta(context, max(0, total - done))
+        await context.ui.edit(
+            control,
+            text(
+                job.language,
+                "publishing_existing",
+                icon=context.premium.html("UPLOAD"),
+                title=html.escape(job.target_pack_title or job.target_pack_name or "—"),
+                done=done,
+                total=total,
+                eta=remaining_eta,
+                **context.premium.placeholders(),
+            ),
+            reply_markup=processing_keyboard(
+                context.premium, job.job_id, job.language
+            ),
+            retry_as_answer=False,
+        )
+
+    async def flood(remaining: float) -> None:
+        await _show_flood_wait(
+            control,
+            job,
+            context,
+            remaining,
+            done=job.appended_items,
+            total=len(outputs),
+            publishing=True,
+            prepared=len(outputs),
+        )
+
+    files = [
+        (path, detect_format(path), item.emoji_list)
+        for item, path in outputs
+    ]
+    await context.publisher.append_to_set(
+        user_id=job.user_id,
+        name=job.target_pack_name,
+        files=files,
+        cancel_event=job.cancel_event,
+        on_flood=flood,
+        on_progress=progress,
+    )
+    url = pack_url(job.target_pack_name, custom_emoji=custom)
+    await context.ui.edit(
+        control,
+        text(
+            job.language,
+            "done_existing_pack",
+            icon=context.premium.html("SUCCESS"),
+            title=html.escape(job.target_pack_title or job.target_pack_name),
+            count=len(outputs),
+            **context.premium.placeholders(),
+        ),
+        reply_markup=result_keyboard(
+            context.premium,
+            add_url=url,
+            language=job.language,
+        ),
     )
 
 
@@ -872,7 +1206,7 @@ async def _publish_packs(
             group_state["published"] = published
             job.progress = published
             now = time.monotonic()
-            if now - last_publication_update < 1.0 and published != len(outputs):
+            if now - last_publication_update < 5.0 and published != len(outputs):
                 return
             last_publication_update = now
             eta = await _pack_eta(context, max(0, len(outputs) - published))
@@ -892,6 +1226,7 @@ async def _publish_packs(
                     reply_markup=processing_keyboard(
                         context.premium, job.job_id, job.language
                     ),
+                    retry_as_answer=False,
                 )
 
         async def publication_flood(
@@ -1035,7 +1370,30 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
         await context.jobs.finish(job.job_id, JobStatus.COMPLETED)
         await show_main_menu(control, context, job.language)
         return
+    if action == "existing":
+        await _request_existing_pack(control, job, context)
+        return
+    if action == "existing_link":
+        await _show_existing_pack_link_prompt(control, job, context)
+        return
+    if action == "existing_saved" and len(parts) == 4:
+        try:
+            selected = job.target_pack_options[int(parts[3])]
+        except (IndexError, KeyError, TypeError, ValueError):
+            await _request_existing_pack(control, job, context)
+            return
+        accepted = await _select_existing_pack(
+            control,
+            job,
+            context,
+            selected.get("url", ""),
+        )
+        if not accepted:
+            await _request_existing_pack(control, job, context)
+        return
     if action == "single_pack":
+        job.target_pack_name = None
+        job.target_pack_title = None
         job.output_type = OutputType.EMOJI_PACK
         await _request_pack_name(control, job, context)
         return
@@ -1079,12 +1437,36 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
                 "single_result_ready",
                 icon=context.premium.html("SUCCESS"),
                 color=job.selected_color or "Adaptive",
+                intensity=_intensity_label(job),
                 **context.premium.placeholders(),
             ),
             reply_markup=single_result_keyboard(
-                context.premium, job.job_id, job.language
+                context.premium, job.job_id, job.language, job.intensity
             ),
         )
+        return
+    if action == "intensity" and len(parts) == 4:
+        if job.adaptive or job.source is None:
+            return
+        if job.processing_task is not None and not job.processing_task.done():
+            return
+        try:
+            selected_intensity = RecolorIntensity(parts[3])
+        except ValueError:
+            return
+        if selected_intensity == job.intensity:
+            return
+        job.intensity = selected_intensity
+        if len(job.source.items) == 1:
+            job.output_type = OutputType.STICKER_PACK
+            job.status = JobStatus.PROCESSING
+            task = asyncio.create_task(
+                _run_single_result(control, job, context),
+                name=f"intensity-{job.short_id}",
+            )
+            job.processing_task = task
+        else:
+            await _render_preview(control, job, context)
         return
     if action == "color" and len(parts) == 4:
         await _select_color(control, job, parts[3], context)
@@ -1161,6 +1543,8 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
             ),
         )
     elif action == "adaptive_ok":
+        job.target_pack_name = None
+        job.target_pack_title = None
         await _request_pack_name(control, job, context)
     elif action == "out" and len(parts) == 4:
         try:
@@ -1168,10 +1552,14 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
         except ValueError:
             return
         if job.output_type in {OutputType.EMOJI_PACK, OutputType.STICKER_PACK}:
+            job.target_pack_name = None
+            job.target_pack_title = None
             await _request_pack_name(control, job, context)
         else:
             await _start_processing(control, job, context)
     elif action == "source_title" and job.source and job.source.title:
+        job.target_pack_name = None
+        job.target_pack_title = None
         job.pack_title = job.source.title[:64]
         await _start_processing(control, job, context)
     elif action == "split":

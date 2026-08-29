@@ -94,6 +94,7 @@ def recolor_image(
     adaptive: bool = False,
     strong: bool = False,
     texture_mode: bool | None = None,
+    intensity: float = 1.0,
 ) -> Image.Image:
     rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8)
     alpha = rgba[..., 3].copy()
@@ -108,16 +109,22 @@ def recolor_image(
             weights=alpha.astype(np.float64) / 255.0,
             chroma_scale=1.35,
             contrast_scale=0.62,
+            strength=intensity,
         )
         output[..., 3] = alpha
     elif texture_mode is True or (
         texture_mode is None and is_textured_image(rgba[..., :3], alpha)
     ):
-        output[..., :3] = recolor_texture_rgb(rgba[..., :3], target)
+        output[..., :3] = recolor_texture_rgb(
+            rgba[..., :3], target, strength=float(np.clip(0.72 * intensity, 0.0, 1.0))
+        )
         output[..., 3] = alpha
     else:
         output[..., :3] = recolor_rgb(
-            rgba[..., :3], target, weights=alpha.astype(np.float64) / 255.0
+            rgba[..., :3],
+            target,
+            weights=alpha.astype(np.float64) / 255.0,
+            strength=intensity,
         )
         output[..., 3] = alpha
     return Image.fromarray(output, mode="RGBA")
@@ -150,12 +157,14 @@ def recolor_raster_file(
     maximum_bytes: int | None = None,
     adaptive: bool = False,
     strong: bool = False,
+    intensity: float = 1.0,
 ) -> Path:
     image = recolor_image(
         load_rgba(source, max_dimension=max_dimension, max_pixels=max_pixels),
         target,
         adaptive=adaptive,
         strong=strong,
+        intensity=intensity,
     )
     if custom_emoji is not None:
         image = prepare_static_output(image, custom_emoji=custom_emoji)

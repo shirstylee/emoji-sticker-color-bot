@@ -222,6 +222,7 @@ def recolor_rgb(
     source_midpoint: float | None = None,
     chroma_scale: float = 1.0,
     contrast_scale: float = 1.0,
+    strength: float = 1.0,
 ) -> NDArray[np.uint8]:
     """Remove source hue while retaining perceptual lightness and local contrast."""
 
@@ -273,6 +274,11 @@ def recolor_rgb(
         lightness_taper = np.clip(np.sin(np.pi * mapped_l), 0.0, 1.0) ** 0.7
         chroma = target_chroma * max(0.0, chroma_scale) * lightness_taper
         output_lab[..., 1:3] = chroma[..., None] * direction
+    amount = float(np.clip(strength, 0.0, 1.5))
+    if amount < 1.0:
+        output_lab = source_lab + (output_lab - source_lab) * amount
+    elif amount > 1.0:
+        output_lab[..., 1:3] *= 1.0 + (amount - 1.0) * 0.8
     output_lab = gamut_map_oklab(output_lab)
     recolored = np.clip(oklab_to_srgb(output_lab), 0.0, 1.0)
     return np.rint(recolored * 255.0).astype(np.uint8)
@@ -332,6 +338,7 @@ def recolor_normalized_color(
     source_midpoint: float | None = None,
     chroma_scale: float = 1.0,
     contrast_scale: float = 1.0,
+    strength: float = 1.0,
 ) -> list[float]:
     if len(color) < 3:
         return list(color)
@@ -343,6 +350,7 @@ def recolor_normalized_color(
             source_midpoint=source_midpoint,
             chroma_scale=chroma_scale,
             contrast_scale=contrast_scale,
+            strength=strength,
         )
         .reshape(3)
         .astype(np.float64)

@@ -89,6 +89,7 @@ STATUS_LABELS = {
     "awaiting_preview_decision": "Ожидание подтверждения",
     "awaiting_output_type": "Выбор результата",
     "awaiting_pack_name": "Ожидание названия",
+    "awaiting_target_pack": "Ожидание ссылки на набор",
     "awaiting_split_confirmation": "Ожидание разделения",
     "awaiting_result_action": "Ожидание действия с результатом",
     "processing": "Обработка",

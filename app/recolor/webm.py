@@ -10,7 +10,11 @@ from pathlib import Path
 import imageio_ffmpeg
 import numpy as np
 
-from app.constants import TELEGRAM_VIDEO_MAX_DURATION_SECONDS, TELEGRAM_VIDEO_MAX_FPS
+from app.constants import (
+    TELEGRAM_VIDEO_MAX_DURATION_SECONDS,
+    TELEGRAM_VIDEO_MAX_FPS,
+    TELEGRAM_VIDEO_SAFE_DURATION_SECONDS,
+)
 from app.recolor.color_math import (
     ParsedColor,
     adaptive_alpha,
@@ -116,6 +120,7 @@ async def recolor_webm_file(
     crf: int = 34,
     adaptive: bool = False,
     strong: bool = False,
+    intensity: float = 1.0,
 ) -> Path:
     info = await probe_webm(source)
     if info.duration > TELEGRAM_VIDEO_MAX_DURATION_SECONDS + 0.01:
@@ -134,6 +139,8 @@ async def recolor_webm_file(
     decoder_arguments.extend((
         "-i",
         str(source),
+        "-t",
+        f"{TELEGRAM_VIDEO_SAFE_DURATION_SECONDS:.2f}",
         "-an",
         "-vf",
         f"fps={fps:.4f},scale={width}:{height}:flags=lanczos",
@@ -220,6 +227,7 @@ async def recolor_webm_file(
                     weights=alpha.astype(np.float64) / 255.0,
                     chroma_scale=1.35,
                     contrast_scale=0.62,
+                    strength=intensity,
                 )
                 output[..., 3] = alpha
             else:
@@ -229,7 +237,10 @@ async def recolor_webm_file(
                     )
                 if texture_mode:
                     output[..., :3] = await asyncio.to_thread(
-                        recolor_texture_rgb, frame[..., :3], target
+                        recolor_texture_rgb,
+                        frame[..., :3],
+                        target,
+                        strength=float(np.clip(0.72 * intensity, 0.0, 1.0)),
                     )
                 else:
                     output[..., :3] = await asyncio.to_thread(
@@ -237,6 +248,7 @@ async def recolor_webm_file(
                         frame[..., :3],
                         target,
                         weights=alpha.astype(np.float64) / 255.0,
+                        strength=intensity,
                     )
                 output[..., 3] = alpha
             encoder_stdin.write(output.tobytes())
@@ -278,6 +290,7 @@ async def optimize_webm(
     timeout: float,
     adaptive: bool = False,
     strong: bool = False,
+    intensity: float = 1.0,
 ) -> Path:
     for attempt, crf in enumerate((30, 34, 38, 42), 1):
         candidate = destination.with_name(f"{destination.stem}_{attempt}{destination.suffix}")
@@ -291,6 +304,7 @@ async def optimize_webm(
             crf=crf,
             adaptive=adaptive,
             strong=strong,
+            intensity=intensity,
         )
         if candidate.stat().st_size <= maximum_bytes:
             candidate.replace(destination)

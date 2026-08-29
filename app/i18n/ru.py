@@ -105,13 +105,42 @@ RU: dict[str, str] = {
     ),
     "preview_ready": (
         "{icon} Предпросмотр первого элемента готов.\n"
-        "{color_icon} Контуры и светотень сохранены. Продолжить?"
+        "{color_icon} Контуры и светотень сохранены.\n"
+        "Интенсивность: <b>{intensity}</b>. Продолжить?"
     ),
     "adaptive_preview": (
         "{icon} Форма подготовлена. Фактический цвет Adaptive Emoji определяет Telegram "
         "в зависимости от места использования и темы."
     ),
     "enter_pack_name": "Введите название нового набора (1–64 символа).",
+    "existing_pack_link_prompt": (
+        "Отправьте ссылку на существующий набор. Подойдёт только набор, "
+        "который этот бот создал для вашего аккаунта."
+    ),
+    "existing_pack_admin_prompt": (
+        "Выберите один из своих наборов, созданных в боте, или отправьте другую ссылку."
+    ),
+    "existing_pack_invalid_link": (
+        "Не удалось распознать ссылку. Отправьте ссылку вида "
+        "<code>https://t.me/addemoji/...</code> или "
+        "<code>https://t.me/addstickers/...</code>."
+    ),
+    "existing_pack_wrong_bot": (
+        "Этот набор создан другим ботом. Telegram разрешает боту изменять только "
+        "наборы, которые он создал сам."
+    ),
+    "existing_pack_unavailable": "Telegram не нашёл этот набор или закрыл к нему доступ.",
+    "existing_pack_type_mismatch": (
+        "Тип ссылки не совпадает с типом набора или набор не поддерживает добавление."
+    ),
+    "existing_pack_full": (
+        "В наборе уже {current} элементов, добавляется {incoming}, а предел Telegram — "
+        "{maximum}. Выберите другой набор."
+    ),
+    "existing_pack_adaptive_mismatch": (
+        "Обычные и Adaptive Emoji нельзя смешивать в одном наборе. Выберите совместимый набор."
+    ),
+    "existing_pack_checking": "Проверяю набор…",
     "split_confirm": "Набор слишком большой для одного Telegram-набора. Разделить на части?",
     "invalid_pack_name": "Название должно содержать от 1 до 64 символов. Введите другое.",
     "processing": "{icon} Перекрашиваю…\n{done} / {total}",
@@ -119,6 +148,12 @@ RU: dict[str, str] = {
         "{icon} <b>Создаю набор в Telegram</b>\n\n"
         "{file_icon} Подготовлено файлов: <b>{prepared} / {total}</b>\n"
         "{pack_icon} Добавлено элементов: <b>{done} / {total}</b>\n"
+        "{time_icon} Примерная готовность: через <code>{eta}</code>"
+    ),
+    "publishing_existing": (
+        "{icon} <b>Добавляю в существующий набор</b>\n\n"
+        "{pack_icon} Набор: {title}\n"
+        "{file_icon} Добавлено элементов: <b>{done} / {total}</b>\n"
         "{time_icon} Примерная готовность: через <code>{eta}</code>"
     ),
     "flood_wait": (
@@ -135,10 +170,14 @@ RU: dict[str, str] = {
     ),
     "single_result_ready": (
         "{icon} <b>Готово</b>\n\n{color_icon} Цвет: <code>{color}</code>\n"
+        "Интенсивность: <b>{intensity}</b>\n"
         "{sticker_icon} Результат отправлен как стикер.\n\n"
-        "{info_icon} Его можно добавить в новый Emoji-набор или скачать исходным файлом."
+        "{info_icon} Его можно добавить в новый или существующий Emoji-набор."
     ),
     "preparing_download": "{icon} Подготавливаю файл для скачивания…",
+    "intensity_soft": "Бережная",
+    "intensity_normal": "Обычная",
+    "intensity_vivid": "Насыщенная",
     "done_file": (
         "{icon} Готово. Цвет: <code>{color}</code>\n"
         "{download_icon} Файл отправлен выше."
@@ -147,6 +186,14 @@ RU: dict[str, str] = {
         "{icon} <b>Набор готов</b>\n\n{edit_icon} Название: {title}\n"
         "{info_icon} Тип: {kind}\n{file_icon} Элементов: {count}\n"
         "{color_icon} Цвет: <code>{color}</code>"
+    ),
+    "done_existing_pack": (
+        "{icon} <b>Готово</b>\n\n{pack_icon} Набор: {title}\n"
+        "{file_icon} Добавлено элементов: <b>{count}</b>"
+    ),
+    "existing_pack_add_failed": (
+        "{icon} Telegram остановил добавление в существующий набор.\n"
+        "Успешно добавлено: <b>{done} / {total}</b>. Уже добавленные элементы сохранены."
     ),
     "partial": "Готово: {done} / {total}\nНе удалось обработать: {failed}",
     "file_too_large": "Файл слишком большой.",

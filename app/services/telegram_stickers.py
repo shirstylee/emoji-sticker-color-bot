@@ -85,6 +85,75 @@ class StickerPublisher:
         self.bot = bot
         self.controller = controller
 
+    async def _add_one(
+        self,
+        *,
+        user_id: int,
+        name: str,
+        item: tuple[Path, MediaFormat, Sequence[str]],
+        cancel_event: asyncio.Event,
+        on_flood: Callable[[float], Awaitable[None]] | None,
+    ) -> None:
+        sticker = input_sticker(*item)
+        add_state = [sticker]
+
+        async def add() -> bool:
+            return await self.bot.add_sticker_to_set(
+                user_id=user_id,
+                name=name,
+                sticker=add_state[0],
+            )
+
+        try:
+            await self.controller.call(
+                add,
+                cancel_event,
+                on_flood=on_flood,
+                conservative=True,
+            )
+        except TelegramBadRequest as error:
+            if not _wrong_file_type(error):
+                raise
+            path, media_format, emoji_list = item
+            add_state[0] = input_sticker(
+                await self._upload_file(
+                    user_id,
+                    path,
+                    media_format,
+                    cancel_event,
+                    on_flood,
+                ),
+                media_format,
+                emoji_list,
+            )
+            # Retrying the same logical mutation must not reserve another slot.
+            await self.controller.call(add, cancel_event, on_flood=on_flood)
+
+    async def append_to_set(
+        self,
+        *,
+        user_id: int,
+        name: str,
+        files: Sequence[tuple[Path, MediaFormat, Sequence[str]]],
+        cancel_event: asyncio.Event,
+        on_flood: Callable[[float], Awaitable[None]] | None = None,
+        on_progress: Callable[[int, int], Awaitable[None]] | None = None,
+    ) -> None:
+        """Append prepared assets to an existing set created by this bot."""
+
+        if not files:
+            raise ValueError("No sticker files were provided")
+        for completed, item in enumerate(files, 1):
+            await self._add_one(
+                user_id=user_id,
+                name=name,
+                item=item,
+                cancel_event=cancel_event,
+                on_flood=on_flood,
+            )
+            if on_progress:
+                await on_progress(completed, len(files))
+
     async def publish_set(
         self,
         *,
@@ -171,47 +240,15 @@ class StickerPublisher:
                 await on_progress(completed, len(files))
             try:
                 for item in files[initial_limit:]:
-                    sticker = input_sticker(*item)
                     if on_prepare:
                         await on_prepare(completed + 1, len(files))
-                    add_state = [sticker]
-
-                    async def add(
-                        name: str = name,
-                        add_state: list[InputSticker] = add_state,
-                    ) -> bool:
-                        return await self.bot.add_sticker_to_set(
-                            user_id=user_id, name=name, sticker=add_state[0]
-                        )
-
-                    try:
-                        await self.controller.call(
-                            add,
-                            cancel_event,
-                            on_flood=on_flood,
-                            conservative=True,
-                        )
-                    except TelegramBadRequest as error:
-                        if not _wrong_file_type(error):
-                            raise
-                        path, media_format, emoji_list = item
-                        sticker = input_sticker(
-                            await self._upload_file(
-                                user_id,
-                                path,
-                                media_format,
-                                cancel_event,
-                                on_flood,
-                            ),
-                            media_format,
-                            emoji_list,
-                        )
-                        add_state[0] = sticker
-                        await self.controller.call(
-                            add,
-                            cancel_event,
-                            on_flood=on_flood,
-                        )
+                    await self._add_one(
+                        user_id=user_id,
+                        name=name,
+                        item=item,
+                        cancel_event=cancel_event,
+                        on_flood=on_flood,
+                    )
                     completed += 1
                     if on_progress:
                         await on_progress(completed, len(files))

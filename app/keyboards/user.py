@@ -6,6 +6,7 @@ from typing import Any
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
+from app.models.job import RecolorIntensity
 from app.services.premium_emoji import PremiumEmojiRegistry
 
 BUTTON_LABELS = {
@@ -32,6 +33,11 @@ BUTTON_LABELS = {
         "back": "Назад",
         "support": "Техническая поддержка",
         "home": "Главное меню",
+        "existing_pack": "Добавить в существующий набор",
+        "enter_pack_link": "Вставить ссылку",
+        "intensity_soft": "Бережная",
+        "intensity_normal": "Обычная",
+        "intensity_vivid": "Насыщенная",
     },
     "en": {
         "picker": "Pick a color",
@@ -56,6 +62,11 @@ BUTTON_LABELS = {
         "back": "Back",
         "support": "Technical support",
         "home": "Main menu",
+        "existing_pack": "Add to existing pack",
+        "enter_pack_link": "Paste a link",
+        "intensity_soft": "Soft",
+        "intensity_normal": "Normal",
+        "intensity_vivid": "Vivid",
     },
 }
 
@@ -257,12 +268,34 @@ def processing_keyboard(
     )
 
 
+def _intensity_row(
+    registry: PremiumEmojiRegistry,
+    job_id: str,
+    language: str,
+    selected: RecolorIntensity,
+) -> list[InlineKeyboardButton]:
+    return [
+        _button(
+            registry,
+            "COLOR",
+            _label(language, f"intensity_{value.value}"),
+            callback_data=f"job:{job_id}:intensity:{value.value}",
+            style="primary" if value == selected else None,
+        )
+        for value in RecolorIntensity
+    ]
+
+
 def preview_keyboard(
-    registry: PremiumEmojiRegistry, job_id: str, language: str = "en"
+    registry: PremiumEmojiRegistry,
+    job_id: str,
+    language: str = "en",
+    intensity: RecolorIntensity = RecolorIntensity.NORMAL,
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [_button(registry, "SUCCESS", _label(language, "continue"), callback_data=f"job:{job_id}:continue")],
+            _intensity_row(registry, job_id, language, intensity),
             [_button(registry, "EDIT", _label(language, "recolor"), callback_data=f"job:{job_id}:recolor")],
             [_button(registry, "CANCEL", _label(language, "cancel"), callback_data=f"job:{job_id}:cancel")],
         ]
@@ -275,6 +308,7 @@ def adaptive_preview_keyboard(
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [_button(registry, "SUCCESS", _label(language, "continue"), callback_data=f"job:{job_id}:adaptive_ok")],
+            [_button(registry, "ADD", _label(language, "existing_pack"), callback_data=f"job:{job_id}:existing")],
             [_button(registry, "CANCEL", _label(language, "cancel"), callback_data=f"job:{job_id}:cancel")],
         ]
     )
@@ -286,6 +320,7 @@ def output_keyboard(
     rows = [
         [_button(registry, "EMOJI", _label(language, "emoji_pack"), callback_data=f"job:{job_id}:out:emoji_pack")],
         [_button(registry, "STICKER", _label(language, "sticker_pack"), callback_data=f"job:{job_id}:out:sticker_pack")],
+        [_button(registry, "ADD", _label(language, "existing_pack"), callback_data=f"job:{job_id}:existing")],
     ]
     if single:
         rows.append([_button(registry, "FILE", _label(language, "file"), callback_data=f"job:{job_id}:out:file")])
@@ -312,7 +347,10 @@ def result_keyboard(
 
 
 def single_result_keyboard(
-    registry: PremiumEmojiRegistry, job_id: str, language: str = "en"
+    registry: PremiumEmojiRegistry,
+    job_id: str,
+    language: str = "en",
+    intensity: RecolorIntensity = RecolorIntensity.NORMAL,
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -325,6 +363,15 @@ def single_result_keyboard(
                     style="primary",
                 )
             ],
+            [
+                _button(
+                    registry,
+                    "ADD",
+                    _label(language, "existing_pack"),
+                    callback_data=f"job:{job_id}:existing",
+                )
+            ],
+            _intensity_row(registry, job_id, language, intensity),
             [
                 _button(
                     registry,
@@ -343,6 +390,48 @@ def single_result_keyboard(
             ],
         ]
     )
+
+
+def existing_pack_keyboard(
+    registry: PremiumEmojiRegistry,
+    job_id: str,
+    packs: list[dict[str, str]],
+    language: str = "en",
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for index, pack in enumerate(packs):
+        title = pack.get("title") or pack.get("url") or "Pack"
+        rows.append(
+            [
+                _button(
+                    registry,
+                    "PACK",
+                    title[:48],
+                    callback_data=f"job:{job_id}:existing_saved:{index}",
+                )
+            ]
+        )
+    rows.extend(
+        [
+            [
+                _button(
+                    registry,
+                    "LINK",
+                    _label(language, "enter_pack_link"),
+                    callback_data=f"job:{job_id}:existing_link",
+                )
+            ],
+            [
+                _button(
+                    registry,
+                    "CANCEL",
+                    _label(language, "cancel"),
+                    callback_data=f"job:{job_id}:cancel",
+                )
+            ],
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def pack_name_keyboard(
