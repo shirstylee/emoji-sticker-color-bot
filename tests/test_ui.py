@@ -94,6 +94,10 @@ def test_color_codes_are_copyable_code_entities() -> None:
         assert "<code>#FFFFFF</code>" in catalog["colors"]
         assert "<code>#2196F3</code>" in catalog["source_found"]
         assert "<code>{color}</code>" in catalog["done_file"]
+        for key in ("colors", "source_found", "pack_source_found"):
+            assert "<blockquote><code>#FFFFFF</code>" in catalog[key]
+            assert "<code>#E91E63</code>" in catalog[key]
+            assert "</blockquote>" in catalog[key]
 
 
 def test_rich_messages_render_with_real_premium_emoji(

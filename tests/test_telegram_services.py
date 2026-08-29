@@ -120,7 +120,7 @@ async def test_429_pack_integration_does_not_duplicate_items(tmp_path: Path) -> 
 
         async def create_new_sticker_set(self, **kwargs: object) -> bool:
             self.created += 1
-            assert len(kwargs["stickers"]) == 50  # type: ignore[arg-type]
+            assert len(kwargs["stickers"]) == 8  # type: ignore[arg-type]
             return True
 
         async def add_sticker_to_set(self, **_: object) -> bool:
@@ -137,7 +137,7 @@ async def test_429_pack_integration_does_not_duplicate_items(tmp_path: Path) -> 
     publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
     progress: list[tuple[int, int]] = []
     files = [
-        (tmp_path / f"{index}.webp", MediaFormat.WEBP, ("🎨",)) for index in range(51)
+        (tmp_path / f"{index}.webp", MediaFormat.WEBP, ("🎨",)) for index in range(9)
     ]
     name = await publisher.publish_set(
         user_id=1,
@@ -153,13 +153,150 @@ async def test_429_pack_integration_does_not_duplicate_items(tmp_path: Path) -> 
     assert bot.created == 1
     assert bot.add_attempts == 2
     assert bot.successful_adds == 1
-    assert progress == [(50, 51), (51, 51)]
+    assert progress == [(8, 9), (9, 9)]
+
+
+@pytest.mark.asyncio
+async def test_pack_creation_batches_initial_eight_and_reports_live_progress(
+    tmp_path: Path,
+) -> None:
+    class FakeBot:
+        def __init__(self) -> None:
+            self.initial = 0
+            self.added = 0
+
+        async def create_new_sticker_set(self, **kwargs: object) -> bool:
+            self.initial = len(kwargs["stickers"])  # type: ignore[arg-type]
+            return True
+
+        async def add_sticker_to_set(self, **_: object) -> bool:
+            self.added += 1
+            return True
+
+        async def set_custom_emoji_sticker_set_thumbnail(self, **_: object) -> bool:
+            return True
+
+        async def get_sticker_set(self, _: str) -> object:
+            return SimpleNamespace(stickers=[])
+
+    bot = FakeBot()
+    publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
+    progress: list[tuple[int, int]] = []
+    files = [
+        (tmp_path / f"{index}.tgs", MediaFormat.TGS, ("🎨",))
+        for index in range(19)
+    ]
+
+    await publisher.publish_set(
+        user_id=1,
+        title="Pack",
+        bot_username="ColorBot",
+        files=files,
+        custom_emoji=True,
+        needs_repainting=False,
+        cancel_event=asyncio.Event(),
+        on_progress=lambda done, total: _append_progress(progress, done, total),
+    )
+
+    assert bot.initial == 8
+    assert bot.added == 11
+    assert progress == [(done, 19) for done in range(8, 20)]
+
+
+@pytest.mark.asyncio
+async def test_conservative_pack_window_counts_items_and_skips_chat_sends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [0.0]
+
+    async def fake_sleep(seconds: float, _cancel: asyncio.Event) -> None:
+        clock[0] += seconds
+
+    monkeypatch.setattr(
+        "app.services.telegram_rate_limiter.time.monotonic", lambda: clock[0]
+    )
+    monkeypatch.setattr(
+        "app.services.telegram_rate_limiter.cancellation_aware_sleep", fake_sleep
+    )
+    controller = TelegramStickerRateController(
+        conservative_enabled=True,
+        conservative_requests=8,
+        conservative_window_seconds=240,
+    )
+    cancel = asyncio.Event()
+    countdown: list[float] = []
+
+    async def operation() -> str:
+        return "ok"
+
+    await controller.call(
+        operation,
+        cancel,
+        conservative=True,
+        conservative_cost=8,
+    )
+    assert await controller.call(operation, cancel, conservative=False) == "ok"
+    assert clock[0] == 0.0
+
+    await controller.call(
+        operation,
+        cancel,
+        conservative=True,
+        on_flood=lambda remaining: _append_countdown(countdown, remaining),
+    )
+
+    assert clock[0] == 240.0
+    assert countdown[0] == 240.0
+    assert countdown[-1] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_retry_after_does_not_reserve_local_window_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [0.0]
+
+    async def fake_sleep(seconds: float, _cancel: asyncio.Event) -> None:
+        clock[0] += seconds
+
+    monkeypatch.setattr(
+        "app.services.telegram_rate_limiter.time.monotonic", lambda: clock[0]
+    )
+    monkeypatch.setattr(
+        "app.services.telegram_rate_limiter.cancellation_aware_sleep", fake_sleep
+    )
+    controller = TelegramStickerRateController(
+        conservative_enabled=True,
+        conservative_requests=1,
+        conservative_window_seconds=10,
+    )
+    attempts = 0
+
+    async def operation() -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RetryError(2)
+        return "ok"
+
+    assert await controller.call(
+        operation,
+        asyncio.Event(),
+        conservative=True,
+    ) == "ok"
+
+    assert attempts == 2
+    assert clock[0] == 2.0
 
 
 async def _append_progress(
     target: list[tuple[int, int]], done: int, total: int
 ) -> None:
     target.append((done, total))
+
+
+async def _append_countdown(target: list[float], remaining: float) -> None:
+    target.append(remaining)
 
 
 @pytest.mark.asyncio

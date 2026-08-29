@@ -252,6 +252,17 @@ def recolor_rgb(
     mapped_l = target_l + (mapped_l - target_l) * float(
         np.clip(contrast_scale, 0.0, 2.0)
     )
+    if target_chroma >= 0.012:
+        # Very bright source fills used to drift almost all the way to white,
+        # leaving only a faint pastel trace of saturated target colors. Keep a
+        # controlled highlight above the selected color instead: shading stays
+        # visible, but white artwork is still unmistakably recolored.
+        highlight_headroom = max((1.0 - target_l) * 0.30, 1e-6)
+        highlight_distance = np.maximum(mapped_l - target_l, 0.0)
+        compressed_highlight = target_l + highlight_headroom * (
+            1.0 - np.exp(-highlight_distance / highlight_headroom)
+        )
+        mapped_l = np.where(mapped_l > target_l, compressed_highlight, mapped_l)
     mapped_l = np.clip(mapped_l, 0.015, 0.99)
 
     output_lab = np.zeros_like(source_lab)

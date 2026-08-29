@@ -45,11 +45,11 @@ EN: dict[str, str] = {
     ),
     "colors": (
         "{icon} <b>Colors</b>\n\n"
-        "<code>#FFFFFF</code> — White\n<code>#000000</code> — Black\n"
+        "<blockquote><code>#FFFFFF</code> — White\n<code>#000000</code> — Black\n"
         "<code>#FF0000</code> — Red\n<code>#FF9800</code> — Orange\n"
         "<code>#FFEB3B</code> — Yellow\n<code>#4CAF50</code> — Green\n"
         "<code>#03A9F4</code> — Light blue\n<code>#2196F3</code> — Blue\n"
-        "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink\n\n"
+        "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink</blockquote>\n\n"
         "Formats: <code>#FF00AA</code>, <code>F0A</code>, "
         "<code>rgb(255, 0, 170)</code>, <code>255, 0, 170</code>."
     ),
@@ -67,11 +67,11 @@ EN: dict[str, str] = {
         "{icon} <b>Source found</b>\n\n{edit_icon} Title: {title}\n"
         "{info_icon} Type: {kind}\n{file_icon} Items: {count}\n"
         "{pack_icon} Formats:\n{formats}\n\n{color_icon} <b>Choose a color</b>\n\n"
-        "<code>#FFFFFF</code> — White\n<code>#000000</code> — Black\n"
+        "<blockquote><code>#FFFFFF</code> — White\n<code>#000000</code> — Black\n"
         "<code>#FF0000</code> — Red\n<code>#FF9800</code> — Orange\n"
         "<code>#FFEB3B</code> — Yellow\n<code>#4CAF50</code> — Green\n"
         "<code>#03A9F4</code> — Light blue\n<code>#2196F3</code> — Blue\n"
-        "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink\n\n"
+        "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink</blockquote>\n\n"
         "Tap a code to copy it and send it to the bot. Or open Pick a color, copy the "
         "HEX/RGB code from the website, and send it as a message."
     ),
@@ -80,11 +80,11 @@ EN: dict[str, str] = {
         "<blockquote>{edit_icon} Title: {title}\n{info_icon} Type: {kind}\n"
         "{file_icon} Items: {count}\n{pack_icon} Formats:\n{formats}</blockquote>\n\n"
         "{color_icon} <b>Choose a color</b>\n\n"
-        "<code>#FFFFFF</code> — White\n<code>#000000</code> — Black\n"
+        "<blockquote><code>#FFFFFF</code> — White\n<code>#000000</code> — Black\n"
         "<code>#FF0000</code> — Red\n<code>#FF9800</code> — Orange\n"
         "<code>#FFEB3B</code> — Yellow\n<code>#4CAF50</code> — Green\n"
         "<code>#03A9F4</code> — Light blue\n<code>#2196F3</code> — Blue\n"
-        "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink\n\n"
+        "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink</blockquote>\n\n"
         "Tap a code, copy it, and send it to the bot, or use Pick a color."
     ),
     "invalid_color": (
@@ -125,7 +125,7 @@ EN: dict[str, str] = {
         "Continuing in <code>{seconds}</code>."
     ),
     "pack_flood_wait": (
-        "Telegram temporarily limited the upload speed.\n"
+        "Telegram limits the speed of sticker pack changes.\n"
         "{file_icon} Files prepared: <b>{prepared} / {total}</b>\n"
         "{pack_icon} Added to the pack: <b>{done} / {total}</b>\n"
         "Continuing in <code>{seconds}</code>."

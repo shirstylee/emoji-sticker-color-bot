@@ -39,19 +39,35 @@ class TelegramStickerRateController:
         self._timestamps: deque[float] = deque()
         self._lock = asyncio.Lock()
 
-    async def _conservative_wait(self, cancel_event: asyncio.Event) -> None:
+    async def _conservative_wait(
+        self,
+        cancel_event: asyncio.Event,
+        *,
+        cost: int,
+        on_wait: Callable[[float], Awaitable[None]] | None,
+    ) -> None:
         if not self.enabled:
             return
+        if cost <= 0:
+            return
+        if cost > self.requests:
+            raise ValueError("Sticker operation cost exceeds the conservative window")
         while True:
             async with self._lock:
                 now = time.monotonic()
                 while self._timestamps and now - self._timestamps[0] >= self.window:
                     self._timestamps.popleft()
-                if len(self._timestamps) < self.requests:
-                    self._timestamps.append(now)
+                if len(self._timestamps) + cost <= self.requests:
+                    self._timestamps.extend([now] * cost)
                     return
-                wait = self.window - (now - self._timestamps[0])
-            await cancellation_aware_sleep(wait, cancel_event)
+                required_expirations = len(self._timestamps) + cost - self.requests
+                deadline = self._timestamps[required_expirations - 1] + self.window
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                continue
+            if on_wait:
+                await on_wait(float(math.ceil(remaining)))
+            await cancellation_aware_sleep(min(1.0, remaining), cancel_event)
 
     async def call(
         self,
@@ -60,12 +76,22 @@ class TelegramStickerRateController:
         *,
         maximum_attempts: int = 8,
         on_flood: Callable[[float], Awaitable[None]] | None = None,
+        conservative: bool = False,
+        conservative_cost: int = 1,
     ) -> T:
         attempts = 0
+        if conservative:
+            # Reserve the logical mutation once. A retry_after retry is the
+            # same operation and must not consume the local window a second
+            # time after Telegram's own countdown has elapsed.
+            await self._conservative_wait(
+                cancel_event,
+                cost=conservative_cost,
+                on_wait=on_flood,
+            )
         while True:
             if cancel_event.is_set():
                 raise asyncio.CancelledError
-            await self._conservative_wait(cancel_event)
             try:
                 return await operation()
             except asyncio.CancelledError:

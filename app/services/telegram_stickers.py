@@ -104,7 +104,12 @@ class StickerPublisher:
             raise ValueError("Sticker set item count is outside Telegram limits")
         for attempt in range(6):
             name = generate_short_name(title, bot_username)
-            initial_files = files[:TELEGRAM_CREATE_INITIAL_MAX]
+            # The Bot API accepts up to 50 initial items, but Telegram's
+            # sticker-mutation flood window is substantially smaller. An
+            # oversized atomic create request can be rejected forever at 0/N,
+            # because retrying it submits the same oversized mutation again.
+            initial_limit = min(TELEGRAM_CREATE_INITIAL_MAX, self.controller.requests)
+            initial_files = files[:initial_limit]
             initial: list[InputSticker] = []
             for prepared, item in enumerate(initial_files, 1):
                 initial.append(input_sticker(*item))
@@ -126,7 +131,13 @@ class StickerPublisher:
                 )
 
             try:
-                await self.controller.call(create, cancel_event, on_flood=on_flood)
+                await self.controller.call(
+                    create,
+                    cancel_event,
+                    on_flood=on_flood,
+                    conservative=True,
+                    conservative_cost=len(initial_files),
+                )
             except TelegramBadRequest as error:
                 message = str(error).lower()
                 if attempt < 5 and (
@@ -150,12 +161,16 @@ class StickerPublisher:
                     for path, media_format, emoji_list in initial_files
                 ]
                 create_state[0] = initial
-                await self.controller.call(create, cancel_event, on_flood=on_flood)
+                await self.controller.call(
+                    create,
+                    cancel_event,
+                    on_flood=on_flood,
+                )
             completed = len(initial_files)
             if on_progress:
                 await on_progress(completed, len(files))
             try:
-                for item in files[TELEGRAM_CREATE_INITIAL_MAX:]:
+                for item in files[initial_limit:]:
                     sticker = input_sticker(*item)
                     if on_prepare:
                         await on_prepare(completed + 1, len(files))
@@ -170,7 +185,12 @@ class StickerPublisher:
                         )
 
                     try:
-                        await self.controller.call(add, cancel_event, on_flood=on_flood)
+                        await self.controller.call(
+                            add,
+                            cancel_event,
+                            on_flood=on_flood,
+                            conservative=True,
+                        )
                     except TelegramBadRequest as error:
                         if not _wrong_file_type(error):
                             raise
@@ -187,7 +207,11 @@ class StickerPublisher:
                             emoji_list,
                         )
                         add_state[0] = sticker
-                        await self.controller.call(add, cancel_event, on_flood=on_flood)
+                        await self.controller.call(
+                            add,
+                            cancel_event,
+                            on_flood=on_flood,
+                        )
                     completed += 1
                     if on_progress:
                         await on_progress(completed, len(files))
@@ -241,6 +265,7 @@ class StickerPublisher:
             lambda: send(FSInputFile(path, filename=f"sticker{path.suffix.lower()}")),
             cancel_event,
             on_flood=on_flood,
+            conservative=False,
         )
 
     async def _set_custom_thumbnail(self, name: str) -> None:

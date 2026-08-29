@@ -346,13 +346,14 @@ async def admin_callback(
             f'{context.premium.html("TIME")} Последнее ожидание Telegram: '
             f"{context.telegram_limiter.last_retry_after or '—'} с\n"
             f'{context.premium.html("CHART")} Предварительное окно: '
-            f"{context.telegram_limiter.requests} запросов / "
+            f"{context.telegram_limiter.requests} изменений набора / "
             f"{context.telegram_limiter.window} с\n"
             f'{context.premium.html("BOT")} Версия Bot API: 10.3'
             "</blockquote>\n\n"
-            "Предварительный режим ограничивает число запросов, а не число эмодзи. "
-            "Он необязателен. Ответ <code>retry_after</code> от Telegram всегда имеет "
-            "приоритет: бот показывает таймер и продолжает ту же операцию автоматически."
+            "Предварительный режим действует только на создание и изменение наборов; "
+            "обычная перекраска и отправка результата не ограничиваются. Ответ "
+            "<code>retry_after</code> от Telegram всегда имеет приоритет: бот показывает "
+            "таймер и продолжает ту же операцию автоматически."
         )
         markup = InlineKeyboardMarkup(
             inline_keyboard=[

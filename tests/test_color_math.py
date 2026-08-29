@@ -52,6 +52,16 @@ def test_recolor_preserves_gradient_order() -> None:
     assert float(chroma.max()) > 0.05
 
 
+def test_saturated_target_keeps_white_highlight_visibly_colored() -> None:
+    white = np.array([[[255, 255, 255]]], dtype=np.uint8)
+
+    output = recolor_rgb(white, parse_color("#9C27B0"))
+    lab = srgb_to_oklab(output.astype(np.float64) / 255.0)[0, 0]
+
+    assert float(lab[0]) < 0.72
+    assert float(np.hypot(lab[1], lab[2])) > 0.12
+
+
 @pytest.mark.parametrize("target", ["#000000", "#FFFFFF"])
 def test_achromatic_targets_keep_visible_contrast(target: str) -> None:
     gray = np.array([[[10, 10, 10], [60, 60, 60], [130, 130, 130], [245, 245, 245]]], dtype=np.uint8)
@@ -80,4 +90,3 @@ def test_colored_recolor_removes_source_hue() -> None:
     lab = srgb_to_oklab(output.astype(np.float64) / 255.0)[0]
     hues = np.arctan2(lab[:, 2], lab[:, 1])
     assert float(np.ptp(hues)) < 0.02
-

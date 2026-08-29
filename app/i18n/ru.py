@@ -45,11 +45,11 @@ RU: dict[str, str] = {
     ),
     "colors": (
         "{icon} <b>Цвета</b>\n\n"
-        "<code>#FFFFFF</code> — Белый\n<code>#000000</code> — Чёрный\n"
+        "<blockquote><code>#FFFFFF</code> — Белый\n<code>#000000</code> — Чёрный\n"
         "<code>#FF0000</code> — Красный\n<code>#FF9800</code> — Оранжевый\n"
         "<code>#FFEB3B</code> — Жёлтый\n<code>#4CAF50</code> — Зелёный\n"
         "<code>#03A9F4</code> — Голубой\n<code>#2196F3</code> — Синий\n"
-        "<code>#9C27B0</code> — Фиолетовый\n<code>#E91E63</code> — Розовый\n\n"
+        "<code>#9C27B0</code> — Фиолетовый\n<code>#E91E63</code> — Розовый</blockquote>\n\n"
         "Форматы: <code>#FF00AA</code>, <code>F0A</code>, "
         "<code>rgb(255, 0, 170)</code>, <code>255, 0, 170</code>."
     ),
@@ -67,11 +67,11 @@ RU: dict[str, str] = {
         "{icon} <b>Источник найден</b>\n\n{edit_icon} Название: {title}\n"
         "{info_icon} Тип: {kind}\n{file_icon} Элементов: {count}\n"
         "{pack_icon} Форматы:\n{formats}\n\n{color_icon} <b>Выберите цвет</b>\n\n"
-        "<code>#FFFFFF</code> — Белый\n<code>#000000</code> — Чёрный\n"
+        "<blockquote><code>#FFFFFF</code> — Белый\n<code>#000000</code> — Чёрный\n"
         "<code>#FF0000</code> — Красный\n<code>#FF9800</code> — Оранжевый\n"
         "<code>#FFEB3B</code> — Жёлтый\n<code>#4CAF50</code> — Зелёный\n"
         "<code>#03A9F4</code> — Голубой\n<code>#2196F3</code> — Синий\n"
-        "<code>#9C27B0</code> — Фиолетовый\n<code>#E91E63</code> — Розовый\n\n"
+        "<code>#9C27B0</code> — Фиолетовый\n<code>#E91E63</code> — Розовый</blockquote>\n\n"
         "Нажмите на код, скопируйте его и отправьте боту. Либо откройте «Подобрать цвет», "
         "скопируйте HEX/RGB-код с сайта и отправьте его сообщением."
     ),
@@ -80,11 +80,11 @@ RU: dict[str, str] = {
         "<blockquote>{edit_icon} Название: {title}\n{info_icon} Тип: {kind}\n"
         "{file_icon} Элементов: {count}\n{pack_icon} Форматы:\n{formats}</blockquote>\n\n"
         "{color_icon} <b>Выберите цвет</b>\n\n"
-        "<code>#FFFFFF</code> — Белый\n<code>#000000</code> — Чёрный\n"
+        "<blockquote><code>#FFFFFF</code> — Белый\n<code>#000000</code> — Чёрный\n"
         "<code>#FF0000</code> — Красный\n<code>#FF9800</code> — Оранжевый\n"
         "<code>#FFEB3B</code> — Жёлтый\n<code>#4CAF50</code> — Зелёный\n"
         "<code>#03A9F4</code> — Голубой\n<code>#2196F3</code> — Синий\n"
-        "<code>#9C27B0</code> — Фиолетовый\n<code>#E91E63</code> — Розовый\n\n"
+        "<code>#9C27B0</code> — Фиолетовый\n<code>#E91E63</code> — Розовый</blockquote>\n\n"
         "Нажмите на код, скопируйте его и отправьте боту или воспользуйтесь "
         "кнопкой «Подобрать цвет»."
     ),
@@ -126,7 +126,7 @@ RU: dict[str, str] = {
         "Продолжение через <code>{seconds}</code>."
     ),
     "pack_flood_wait": (
-        "Telegram временно ограничил скорость.\n"
+        "Telegram ограничивает скорость изменения наборов.\n"
         "{file_icon} Подготовлено файлов: <b>{prepared} / {total}</b>\n"
         "{pack_icon} Добавлено в набор: <b>{done} / {total}</b>\n"
         "Продолжение через <code>{seconds}</code>."

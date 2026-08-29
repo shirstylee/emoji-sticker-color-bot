@@ -101,6 +101,7 @@ async def _telegram_send(
     return await context.telegram_limiter.call(
         operation,
         job.cancel_event,
+        conservative=False,
         on_flood=lambda remaining: _show_flood_wait(
             control, job, context, remaining
         ),
@@ -802,7 +803,7 @@ async def _publish_packs(
             job.language,
             "publishing",
             icon=context.premium.html("UPLOAD"),
-            prepared=0,
+            prepared=len(outputs),
             done=0,
             total=len(outputs),
             **context.premium.placeholders(),
@@ -813,49 +814,14 @@ async def _publish_packs(
     links: list[str] = []
     saved_packs: list[dict[str, str]] = []
     published = 0
-    prepared = 0
     last_publication_update = 0.0
     for index, group in enumerate(groups, 1):
         group_offset = published
         group_state = {
             "offset": group_offset,
-            "prepared": prepared,
+            "prepared": len(outputs),
             "published": published,
         }
-
-        async def edit_publication(
-            group_state: dict[str, int] = group_state,
-        ) -> None:
-            await context.ui.edit(
-                control,
-                text(
-                    job.language,
-                    "publishing",
-                    icon=context.premium.html("UPLOAD"),
-                    prepared=group_state["prepared"],
-                    done=group_state["published"],
-                    total=len(outputs),
-                    **context.premium.placeholders(),
-                ),
-                reply_markup=processing_keyboard(
-                    context.premium, job.job_id, job.language
-                ),
-            )
-
-        async def preparation_progress(
-            done: int,
-            _total: int,
-            group_state: dict[str, int] = group_state,
-        ) -> None:
-            nonlocal prepared, last_publication_update
-            prepared = group_state["offset"] + done
-            group_state["prepared"] = prepared
-            now = time.monotonic()
-            if now - last_publication_update < 1.0 and prepared != len(outputs):
-                return
-            last_publication_update = now
-            with contextlib.suppress(Exception):
-                await edit_publication()
 
         async def publication_progress(
             done: int,
@@ -921,9 +887,7 @@ async def _publish_packs(
             cancel_event=job.cancel_event,
             on_flood=publication_flood,
             on_progress=publication_progress,
-            on_prepare=preparation_progress,
         )
-        prepared = group_offset + len(group)
         published = group_offset + len(group)
         job.progress = published
         job.created_sets.append(name)

@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     ram_safety_min_mib: int = 768
     disk_safety_min_mib: int = 2048
 
-    telegram_sticker_conservative_limit_enabled: bool = False
+    telegram_sticker_conservative_limit_enabled: bool = True
     telegram_sticker_conservative_requests: int = 8
     telegram_sticker_conservative_window_seconds: int = 240
 
