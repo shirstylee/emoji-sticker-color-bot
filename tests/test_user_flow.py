@@ -289,6 +289,20 @@ async def test_existing_pack_selection_uses_links_for_users_and_saved_packs_for_
         assert "Отправьте ссылку" in rendered
         admins.packs.assert_not_awaited()
 
+    job.source = SourceDescriptor(
+        kind=SourceKind.CUSTOM_EMOJI,
+        items=[SourceItem(1, tmp_path / "one.webp", MediaFormat.WEBP)],
+    )
+    job.selected_color = "#8B00FF"
+    callback.data = f"job:{job.job_id}:pack_back"
+    await job_callback(callback, context)  # type: ignore[arg-type]
+
+    assert job.status == JobStatus.AWAITING_RESULT_ACTION
+    back_markup = context.ui.edit.await_args.kwargs["reply_markup"]
+    assert back_markup.inline_keyboard[0][0].callback_data == (
+        f"job:{job.job_id}:single_pack"
+    )
+
 
 @pytest.mark.asyncio
 async def test_existing_pack_accepts_aiogram_sticker_type_enum(

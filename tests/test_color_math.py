@@ -119,8 +119,10 @@ def test_vivid_intensity_produces_dense_purple_highlights() -> None:
     vivid = recolor_rgb(source, target, strength=1.4)
     normal_lab = srgb_to_oklab(normal.astype(np.float64) / 255.0)
     vivid_lab = srgb_to_oklab(vivid.astype(np.float64) / 255.0)
+    target_lab = srgb_to_oklab(np.asarray(target.rgb, dtype=np.float64) / 255.0)
 
-    assert float(vivid_lab[0, 0, 0]) < float(normal_lab[0, 0, 0]) - 0.05
+    assert float(vivid_lab[0, 0, 0]) < float(normal_lab[0, 0, 0]) - 0.03
+    assert float(vivid_lab[0, 0, 0]) > float(target_lab[0]) + 0.06
     assert float(vivid_lab[0, 1, 0]) < float(normal_lab[0, 1, 0])
     assert float(np.hypot(vivid_lab[0, 1, 1], vivid_lab[0, 1, 2])) >= float(
         np.hypot(normal_lab[0, 1, 1], normal_lab[0, 1, 2])

@@ -580,6 +580,11 @@ async def _show_existing_pack_link_prompt(
             job.job_id,
             source_title=False,
             language=job.language,
+            back_action=(
+                "existing"
+                if job.is_admin and job.target_pack_options
+                else "pack_back"
+            ),
         ),
     )
 
@@ -605,6 +610,69 @@ async def _request_existing_pack(
             job.job_id,
             job.target_pack_options,
             job.language,
+        ),
+    )
+
+
+async def _return_from_pack_choice(
+    control: Message, job: RuntimeJob, context: AppContext
+) -> None:
+    """Return to the screen from which pack creation/addition was opened."""
+
+    job.target_pack_name = None
+    job.target_pack_title = None
+    job.target_pack_options = []
+    if job.adaptive:
+        job.status = JobStatus.AWAITING_PREVIEW_DECISION
+        await context.ui.edit(
+            control,
+            text(
+                job.language,
+                "adaptive_preview",
+                icon=context.premium.html("MAGIC"),
+            ),
+            reply_markup=adaptive_preview_keyboard(
+                context.premium, job.job_id, job.language
+            ),
+        )
+        return
+    if job.source is not None and len(job.source.items) == 1:
+        job.output_type = OutputType.STICKER_PACK
+        job.status = JobStatus.AWAITING_RESULT_ACTION
+        await context.ui.edit(
+            control,
+            text(
+                job.language,
+                "single_result_ready",
+                icon=context.premium.html("SUCCESS"),
+                color=job.selected_color or "Adaptive",
+                intensity=_intensity_label(job),
+                **context.premium.placeholders(),
+            ),
+            reply_markup=single_result_keyboard(
+                context.premium, job.job_id, job.language, job.intensity
+            ),
+        )
+        return
+    job.output_type = None
+    job.status = JobStatus.AWAITING_OUTPUT_TYPE
+    key = (
+        "pack_choose_output"
+        if job.source is not None and job.source.kind == SourceKind.PACK
+        else "choose_output"
+    )
+    await context.ui.edit(
+        control,
+        text(
+            job.language,
+            key,
+            icon=context.premium.html("COLOR"),
+            color=job.selected_color,
+            count=job.total,
+            **context.premium.placeholders(),
+        ),
+        reply_markup=output_keyboard(
+            context.premium, job.job_id, single=False, language=job.language
         ),
     )
 
@@ -1397,6 +1465,9 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
         return
     if action == "existing_link":
         await _show_existing_pack_link_prompt(control, job, context)
+        return
+    if action == "pack_back":
+        await _return_from_pack_choice(control, job, context)
         return
     if action == "existing_saved" and len(parts) == 4:
         try:

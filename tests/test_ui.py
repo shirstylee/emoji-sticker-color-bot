@@ -18,6 +18,7 @@ from app.keyboards.user import (
     information_keyboard,
     language_keyboard,
     main_menu_keyboard,
+    pack_name_keyboard,
     processing_keyboard,
     result_keyboard,
     single_result_keyboard,
@@ -202,6 +203,19 @@ def test_admin_existing_pack_keyboard_lists_saved_packs(
         "job:job:existing_saved:0",
         "job:job:existing_saved:1",
         "job:job:existing_link",
+        "job:job:pack_back",
+        "job:job:cancel",
+    ]
+
+    name_keyboard = pack_name_keyboard(
+        registry,
+        "job",
+        source_title=True,
+        language="ru",
+    )
+    assert [row[0].callback_data for row in name_keyboard.inline_keyboard] == [
+        "job:job:source_title",
+        "job:job:pack_back",
         "job:job:cancel",
     ]
 

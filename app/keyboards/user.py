@@ -455,6 +455,14 @@ def existing_pack_keyboard(
             [
                 _button(
                     registry,
+                    "BACK",
+                    _label(language, "back"),
+                    callback_data=f"job:{job_id}:pack_back",
+                )
+            ],
+            [
+                _button(
+                    registry,
                     "CANCEL",
                     _label(language, "cancel"),
                     callback_data=f"job:{job_id}:cancel",
@@ -466,7 +474,12 @@ def existing_pack_keyboard(
 
 
 def pack_name_keyboard(
-    registry: PremiumEmojiRegistry, job_id: str, *, source_title: bool, language: str = "en"
+    registry: PremiumEmojiRegistry,
+    job_id: str,
+    *,
+    source_title: bool,
+    language: str = "en",
+    back_action: str = "pack_back",
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if source_title:
@@ -480,7 +493,26 @@ def pack_name_keyboard(
                 )
             ]
         )
-    rows.append([_button(registry, "CANCEL", _label(language, "cancel"), callback_data=f"job:{job_id}:cancel")])
+    rows.extend(
+        [
+            [
+                _button(
+                    registry,
+                    "BACK",
+                    _label(language, "back"),
+                    callback_data=f"job:{job_id}:{back_action}",
+                )
+            ],
+            [
+                _button(
+                    registry,
+                    "CANCEL",
+                    _label(language, "cancel"),
+                    callback_data=f"job:{job_id}:cancel",
+                )
+            ],
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
