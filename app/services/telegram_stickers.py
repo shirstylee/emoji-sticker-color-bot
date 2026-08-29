@@ -93,6 +93,7 @@ class StickerPublisher:
         cancel_event: asyncio.Event,
         on_flood: Callable[[float], Awaitable[None]] | None = None,
         on_progress: Callable[[int, int], Awaitable[None]] | None = None,
+        on_prepare: Callable[[int, int], Awaitable[None]] | None = None,
     ) -> str:
         maximum = TELEGRAM_CUSTOM_EMOJI_SET_MAX if custom_emoji else TELEGRAM_REGULAR_STICKER_SET_MAX
         if not files or len(files) > maximum:
@@ -100,7 +101,18 @@ class StickerPublisher:
         for attempt in range(6):
             name = generate_short_name(title, bot_username)
             initial_files = files[:TELEGRAM_CREATE_INITIAL_MAX]
-            initial = [input_sticker(*item) for item in initial_files]
+            initial: list[InputSticker] = []
+            for prepared, item in enumerate(initial_files, 1):
+                initial.append(
+                    await self._prepare_input_sticker(
+                        user_id,
+                        item,
+                        cancel_event,
+                        on_flood,
+                    )
+                )
+                if on_prepare:
+                    await on_prepare(prepared, len(files))
             create_state = [initial]
 
             async def create(
@@ -147,7 +159,14 @@ class StickerPublisher:
                 await on_progress(completed, len(files))
             try:
                 for item in files[TELEGRAM_CREATE_INITIAL_MAX:]:
-                    sticker = input_sticker(*item)
+                    sticker = await self._prepare_input_sticker(
+                        user_id,
+                        item,
+                        cancel_event,
+                        on_flood,
+                    )
+                    if on_prepare:
+                        await on_prepare(completed + 1, len(files))
                     add_state = [sticker]
 
                     async def add(
@@ -191,6 +210,28 @@ class StickerPublisher:
             return name
         raise RuntimeError("Could not allocate a Telegram sticker set short name")
 
+    async def _prepare_input_sticker(
+        self,
+        user_id: int,
+        item: tuple[Path, MediaFormat, Sequence[str]],
+        cancel_event: asyncio.Event,
+        on_flood: Callable[[float], Awaitable[None]] | None,
+    ) -> InputSticker:
+        path, media_format, emoji_list = item
+        # Telegram explicitly requires uploadStickerFile before a TGS sticker
+        # is shown. Pre-uploading also prevents Telegram from classifying a
+        # valid animation as a generic document ("Unknown Track").
+        sticker: Path | str = path
+        if media_format == MediaFormat.TGS:
+            sticker = await self._upload_file(
+                user_id,
+                path,
+                media_format,
+                cancel_event,
+                on_flood,
+            )
+        return input_sticker(sticker, media_format, emoji_list)
+
     async def _upload_file(
         self,
         user_id: int,
@@ -227,6 +268,19 @@ class StickerPublisher:
         async def send(sticker: FSInputFile | str) -> Message:
             return await self.bot.send_sticker(chat_id=chat_id, sticker=sticker)
 
+        if media_format == MediaFormat.TGS:
+            file_id = await self._upload_file(
+                user_id,
+                path,
+                media_format,
+                cancel_event,
+                on_flood,
+            )
+            return await self.controller.call(
+                lambda: send(file_id),
+                cancel_event,
+                on_flood=on_flood,
+            )
         try:
             return await self.controller.call(
                 lambda: send(FSInputFile(path, filename=f"sticker{path.suffix.lower()}")),

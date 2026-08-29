@@ -183,7 +183,7 @@ async def test_wrong_file_type_uploads_before_retrying_pack_creation(
             self.uploads += 1
             return SimpleNamespace(file_id="uploaded-file-id")
 
-    path = tmp_path / "one.tgs"
+    path = tmp_path / "one.webp"
     path.write_bytes(b"payload")
     bot = FakeBot()
     publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
@@ -192,7 +192,7 @@ async def test_wrong_file_type_uploads_before_retrying_pack_creation(
         user_id=1,
         title="Pack",
         bot_username="ColorBot",
-        files=[(path, MediaFormat.TGS, ("🎨",))],
+        files=[(path, MediaFormat.WEBP, ("🎨",))],
         custom_emoji=True,
         needs_repainting=False,
         cancel_event=asyncio.Event(),
@@ -221,7 +221,7 @@ async def test_sticker_send_falls_back_to_uploaded_file_id(tmp_path: Path) -> No
         async def upload_sticker_file(self, **_: object) -> object:
             return SimpleNamespace(file_id="uploaded-file-id")
 
-    path = tmp_path / "one.tgs"
+    path = tmp_path / "one.webm"
     path.write_bytes(b"payload")
     bot = FakeBot()
     publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
@@ -230,12 +230,73 @@ async def test_sticker_send_falls_back_to_uploaded_file_id(tmp_path: Path) -> No
         user_id=1,
         chat_id=1,
         path=path,
-        media_format=MediaFormat.TGS,
+        media_format=MediaFormat.WEBM,
         cancel_event=asyncio.Event(),
     )
 
     assert result.message_id == 7  # type: ignore[attr-defined]
     assert bot.sent[1] == "uploaded-file-id"
+
+
+@pytest.mark.asyncio
+async def test_tgs_is_uploaded_before_it_is_sent_as_a_sticker(tmp_path: Path) -> None:
+    class FakeBot:
+        def __init__(self) -> None:
+            self.events: list[tuple[str, object]] = []
+
+        async def upload_sticker_file(self, **_: object) -> object:
+            self.events.append(("upload", "tgs"))
+            return SimpleNamespace(file_id="uploaded-tgs-id")
+
+        async def send_sticker(self, **kwargs: object) -> object:
+            self.events.append(("send", kwargs["sticker"]))
+            return SimpleNamespace(message_id=8)
+
+    path = tmp_path / "one.tgs"
+    path.write_bytes(b"payload")
+    bot = FakeBot()
+    publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
+
+    await publisher.send_sticker_file(
+        user_id=1,
+        chat_id=1,
+        path=path,
+        media_format=MediaFormat.TGS,
+        cancel_event=asyncio.Event(),
+    )
+
+    assert bot.events == [("upload", "tgs"), ("send", "uploaded-tgs-id")]
+
+
+@pytest.mark.asyncio
+async def test_tgs_is_uploaded_before_pack_creation(tmp_path: Path) -> None:
+    class FakeBot:
+        def __init__(self) -> None:
+            self.created_sticker: object | None = None
+
+        async def upload_sticker_file(self, **_: object) -> object:
+            return SimpleNamespace(file_id="uploaded-tgs-id")
+
+        async def create_new_sticker_set(self, **kwargs: object) -> bool:
+            self.created_sticker = kwargs["stickers"][0].sticker  # type: ignore[index]
+            return True
+
+    path = tmp_path / "one.tgs"
+    path.write_bytes(b"payload")
+    bot = FakeBot()
+    publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
+
+    await publisher.publish_set(
+        user_id=1,
+        title="Adaptive Pack",
+        bot_username="ColorBot",
+        files=[(path, MediaFormat.TGS, ("🎨",))],
+        custom_emoji=True,
+        needs_repainting=True,
+        cancel_event=asyncio.Event(),
+    )
+
+    assert bot.created_sticker == "uploaded-tgs-id"
 
 
 @pytest.mark.asyncio

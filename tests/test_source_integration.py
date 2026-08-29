@@ -152,6 +152,26 @@ async def test_pack_link_source(settings: Settings) -> None:
 
 
 @pytest.mark.asyncio
+async def test_text_link_entity_pack_source(settings: Settings) -> None:
+    manager, job = await new_job(settings)
+    entity = MessageEntity(
+        type="text_link",
+        offset=0,
+        length=3,
+        url="https://t.me/addemoji/OutlineEmoji",
+    )
+    source = await resolve_message(
+        FakeBot(),
+        job,
+        message(text="Пак", entities=[entity]),
+        settings,  # type: ignore[arg-type]
+    )
+    assert source.kind == SourceKind.PACK
+    assert len(source.items) == 2
+    await manager.finish(job.job_id)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("file_id", "filename", "expected"),
     [("png", "image.png", MediaFormat.PNG), ("tgs", "animation.tgs", MediaFormat.TGS)],
@@ -200,4 +220,3 @@ async def test_unicode_source_with_mock_local_renderer(
     assert source.kind == SourceKind.UNICODE
     assert source.items[0].format == MediaFormat.PNG
     await manager.finish(job.job_id, JobStatus.COMPLETED)
-

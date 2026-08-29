@@ -105,6 +105,7 @@ def test_rich_messages_render_with_real_premium_emoji(
         "kind": "TGS",
         "count": 1,
         "done": 1,
+        "prepared": 1,
         "total": 1,
         "formats": "TGS: 1",
         "color": "#2196F3",
@@ -121,7 +122,7 @@ def test_rich_messages_render_with_real_premium_emoji(
         "choose_output": 2,
         "pack_choose_output": 4,
         "preview_ready": 2,
-        "publishing": 2,
+        "publishing": 3,
         "done_file": 2,
         "done_pack": 5,
     }

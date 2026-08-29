@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.services.premium_emoji import PremiumEmojiRegistry
-from app.services.source_resolver import parse_pack_link
+from app.services.source_resolver import find_pack_link, parse_pack_link
 from app.services.unicode_emoji import extract_single_emoji
 from app.validators.common import sanitize_filename
 
@@ -47,6 +47,30 @@ def test_strict_pack_links(value: str, expected: tuple[str, str]) -> None:
 )
 def test_arbitrary_urls_and_unsafe_pack_links_rejected(value: str) -> None:
     assert parse_pack_link(value) is None
+
+
+def test_embedded_pack_link_does_not_truncate_unsafe_path() -> None:
+    assert find_pack_link("https://t.me/addemoji/name/extra") is None
+    assert find_pack_link(f"https://t.me/addemoji/{'a' * 65}") is None
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (
+            "[https://t.me/addemoji/OutlineEmoji](https://t.me/addemoji/OutlineEmoji)",
+            ("addemoji", "OutlineEmoji"),
+        ),
+        (
+            "Пак: https://t.me/addemoji/GabeNews_CIS — обработай",
+            ("addemoji", "GabeNews_CIS"),
+        ),
+    ],
+)
+def test_pack_link_is_found_inside_message_text(
+    value: str, expected: tuple[str, str]
+) -> None:
+    assert find_pack_link(value) == expected
 
 
 @pytest.mark.parametrize("value", ["🔥", "❤️", "👨‍💻", "🏳️‍🌈"])

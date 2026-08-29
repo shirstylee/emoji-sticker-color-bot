@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -29,6 +30,12 @@ class SourceError(ValueError):
     """The Telegram message cannot be resolved into a safe supported source."""
 
 
+PACK_LINK_RE = re.compile(
+    r"(?i)(?:https?://)?(?:www\.)?t\.me/(?:addstickers|addemoji)/"
+    r"[A-Za-z0-9_]{1,64}(?![A-Za-z0-9_/])"
+)
+
+
 def parse_pack_link(value: str) -> tuple[str, str] | None:
     raw = value.strip()
     candidate = raw if "://" in raw else f"https://{raw}"
@@ -48,6 +55,34 @@ def parse_pack_link(value: str) -> tuple[str, str] | None:
     if not name or len(name) > 64 or not name.replace("_", "a").isalnum() or not name.isascii():
         return None
     return parts[0], name
+
+
+def find_pack_link(value: str) -> tuple[str, str] | None:
+    """Find one safe Telegram pack URL inside plain or Markdown-like text."""
+
+    direct = parse_pack_link(value)
+    if direct is not None:
+        return direct
+    for match in PACK_LINK_RE.finditer(value):
+        parsed = parse_pack_link(match.group(0))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def message_pack_link(message: Message) -> tuple[str, str] | None:
+    text = message.text or message.caption or ""
+    entities = message.entities if message.text is not None else message.caption_entities
+    for entity in entities or []:
+        if entity.url:
+            parsed = find_pack_link(entity.url)
+            if parsed is not None:
+                return parsed
+        extracted = entity.extract_from(text)
+        parsed = find_pack_link(extracted)
+        if parsed is not None:
+            return parsed
+    return find_pack_link(text)
 
 
 def sticker_format(sticker: Sticker) -> MediaFormat:
@@ -279,14 +314,15 @@ async def resolve_message(
 ) -> SourceDescriptor:
     if message.sticker:
         return await resolve_sticker(bot, job, message.sticker, settings)
-    text = (message.text or "").strip()
-    link = parse_pack_link(text)
+    text = (message.text or message.caption or "").strip()
+    link = message_pack_link(message)
     if link:
         return await resolve_pack(bot, job, link[1], settings)
-    if message.entities:
+    entities = message.entities or message.caption_entities
+    if entities:
         custom_ids = [
             entity.custom_emoji_id
-            for entity in message.entities
+            for entity in entities
             if entity.type == MessageEntityType.CUSTOM_EMOJI and entity.custom_emoji_id
         ]
         if len(custom_ids) == 1:

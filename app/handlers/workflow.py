@@ -42,7 +42,7 @@ from app.services.archive import split_output_zip
 from app.services.jobs import ActiveJobError
 from app.services.source_resolver import (
     SourceError,
-    parse_pack_link,
+    message_pack_link,
     resolve_media_group,
     resolve_message,
 )
@@ -69,6 +69,7 @@ async def _show_flood_wait(
     done: int | None = None,
     total: int | None = None,
     publishing: bool = False,
+    prepared: int | None = None,
 ) -> None:
     try:
         await context.ui.edit(
@@ -80,6 +81,7 @@ async def _show_flood_wait(
                 seconds=_countdown(remaining),
                 done=job.progress if done is None else done,
                 total=job.total if total is None else total,
+                prepared=job.progress if prepared is None else prepared,
                 **context.premium.placeholders(),
             ),
             reply_markup=processing_keyboard(
@@ -274,7 +276,7 @@ def _looks_like_new_source(message: Message) -> bool:
         return True
     value = (message.text or "").strip()
     return (
-        parse_pack_link(value) is not None
+        message_pack_link(message) is not None
         or extract_single_emoji(value) is not None
         or any(
             entity.type == MessageEntityType.CUSTOM_EMOJI
@@ -796,6 +798,7 @@ async def _publish_packs(
             job.language,
             "publishing",
             icon=context.premium.html("UPLOAD"),
+            prepared=0,
             done=0,
             total=len(outputs),
             **context.premium.placeholders(),
@@ -806,10 +809,49 @@ async def _publish_packs(
     links: list[str] = []
     saved_packs: list[dict[str, str]] = []
     published = 0
+    prepared = 0
     last_publication_update = 0.0
     for index, group in enumerate(groups, 1):
         group_offset = published
-        group_state = {"offset": group_offset, "published": published}
+        group_state = {
+            "offset": group_offset,
+            "prepared": prepared,
+            "published": published,
+        }
+
+        async def edit_publication(
+            group_state: dict[str, int] = group_state,
+        ) -> None:
+            await context.ui.edit(
+                control,
+                text(
+                    job.language,
+                    "publishing",
+                    icon=context.premium.html("UPLOAD"),
+                    prepared=group_state["prepared"],
+                    done=group_state["published"],
+                    total=len(outputs),
+                    **context.premium.placeholders(),
+                ),
+                reply_markup=processing_keyboard(
+                    context.premium, job.job_id, job.language
+                ),
+            )
+
+        async def preparation_progress(
+            done: int,
+            _total: int,
+            group_state: dict[str, int] = group_state,
+        ) -> None:
+            nonlocal prepared, last_publication_update
+            prepared = group_state["offset"] + done
+            group_state["prepared"] = prepared
+            now = time.monotonic()
+            if now - last_publication_update < 1.0 and prepared != len(outputs):
+                return
+            last_publication_update = now
+            with contextlib.suppress(Exception):
+                await edit_publication()
 
         async def publication_progress(
             done: int,
@@ -831,6 +873,7 @@ async def _publish_packs(
                         job.language,
                         "publishing",
                         icon=context.premium.html("UPLOAD"),
+                        prepared=group_state["prepared"],
                         done=published,
                         total=len(outputs),
                         **context.premium.placeholders(),
@@ -852,6 +895,7 @@ async def _publish_packs(
                 done=group_state["published"],
                 total=len(outputs),
                 publishing=True,
+                prepared=group_state["prepared"],
             )
 
         if len(groups) == 1:
@@ -873,7 +917,9 @@ async def _publish_packs(
             cancel_event=job.cancel_event,
             on_flood=publication_flood,
             on_progress=publication_progress,
+            on_prepare=preparation_progress,
         )
+        prepared = group_offset + len(group)
         published = group_offset + len(group)
         job.progress = published
         job.created_sets.append(name)

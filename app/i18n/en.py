@@ -116,6 +116,7 @@ EN: dict[str, str] = {
     "processing": "{icon} Recoloring…\n{done} / {total}",
     "publishing": (
         "{icon} <b>Creating the pack in Telegram</b>\n\n"
+        "{file_icon} Files prepared: <b>{prepared} / {total}</b>\n"
         "{pack_icon} Items added: <b>{done} / {total}</b>"
     ),
     "flood_wait": (
@@ -125,12 +126,13 @@ EN: dict[str, str] = {
     ),
     "pack_flood_wait": (
         "Telegram temporarily limited the upload speed.\n"
+        "{file_icon} Files prepared: <b>{prepared} / {total}</b>\n"
         "{pack_icon} Added to the pack: <b>{done} / {total}</b>\n"
         "Continuing in <code>{seconds}</code>."
     ),
     "single_result_ready": (
         "{icon} <b>Done</b>\n\n{color_icon} Color: <code>{color}</code>\n"
-        "{sticker_icon} The result was sent above as a sticker.\n\n"
+        "{sticker_icon} The result was sent as a sticker.\n\n"
         "{info_icon} You can add it to a new Emoji Pack or download the source file."
     ),
     "preparing_download": "{icon} Preparing the downloadable file…",

@@ -13,7 +13,7 @@
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" />
   <img alt="aiogram 3.31" src="https://img.shields.io/badge/aiogram-3.31-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
   <img alt="Telegram Bot API 10.3" src="https://img.shields.io/badge/Bot_API-10.3-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
-  <img alt="Tests: 115 passed" src="https://img.shields.io/badge/tests-115%20passed-2EA44F?style=flat-square" />
+  <img alt="Tests: 121 passed" src="https://img.shields.io/badge/tests-121%20passed-2EA44F?style=flat-square" />
   <img alt="Interface: Russian, admin RU and EN" src="https://img.shields.io/badge/interface-RU%20%7C%20admin%20RU%20%2F%20EN-7C3AED?style=flat-square" />
 </p>
 
