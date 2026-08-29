@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import SendSticker
+from aiogram.types import FSInputFile
 
 from app.database.admins import AdminService
 from app.handlers.admin import admin_command
@@ -204,22 +205,17 @@ async def test_wrong_file_type_uploads_before_retrying_pack_creation(
 
 
 @pytest.mark.asyncio
-async def test_sticker_send_falls_back_to_uploaded_file_id(tmp_path: Path) -> None:
+async def test_sticker_send_uses_multipart_asset_without_pack_upload(tmp_path: Path) -> None:
     class FakeBot:
         def __init__(self) -> None:
             self.sent: list[object] = []
 
         async def send_sticker(self, **kwargs: object) -> object:
             self.sent.append(kwargs["sticker"])
-            if len(self.sent) == 1:
-                raise TelegramBadRequest(
-                    SendSticker(chat_id=1, sticker="invalid"),
-                    "Bad Request: wrong file type",
-                )
             return SimpleNamespace(message_id=7)
 
         async def upload_sticker_file(self, **_: object) -> object:
-            return SimpleNamespace(file_id="uploaded-file-id")
+            raise AssertionError("chat delivery must not use uploadStickerFile")
 
     path = tmp_path / "one.webm"
     path.write_bytes(b"payload")
@@ -227,7 +223,6 @@ async def test_sticker_send_falls_back_to_uploaded_file_id(tmp_path: Path) -> No
     publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
 
     result = await publisher.send_sticker_file(
-        user_id=1,
         chat_id=1,
         path=path,
         media_format=MediaFormat.WEBM,
@@ -235,11 +230,12 @@ async def test_sticker_send_falls_back_to_uploaded_file_id(tmp_path: Path) -> No
     )
 
     assert result.message_id == 7  # type: ignore[attr-defined]
-    assert bot.sent[1] == "uploaded-file-id"
+    assert len(bot.sent) == 1
+    assert isinstance(bot.sent[0], FSInputFile)
 
 
 @pytest.mark.asyncio
-async def test_tgs_is_uploaded_before_it_is_sent_as_a_sticker(tmp_path: Path) -> None:
+async def test_tgs_cannot_use_pack_upload_file_id_for_chat_delivery(tmp_path: Path) -> None:
     class FakeBot:
         def __init__(self) -> None:
             self.events: list[tuple[str, object]] = []
@@ -257,15 +253,15 @@ async def test_tgs_is_uploaded_before_it_is_sent_as_a_sticker(tmp_path: Path) ->
     bot = FakeBot()
     publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
 
-    await publisher.send_sticker_file(
-        user_id=1,
-        chat_id=1,
-        path=path,
-        media_format=MediaFormat.TGS,
-        cancel_event=asyncio.Event(),
-    )
+    with pytest.raises(ValueError, match="render it to WEBM"):
+        await publisher.send_sticker_file(
+            chat_id=1,
+            path=path,
+            media_format=MediaFormat.TGS,
+            cancel_event=asyncio.Event(),
+        )
 
-    assert bot.events == [("upload", "tgs"), ("send", "uploaded-tgs-id")]
+    assert bot.events == []
 
 
 @pytest.mark.asyncio

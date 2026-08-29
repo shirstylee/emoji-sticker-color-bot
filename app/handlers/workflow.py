@@ -345,6 +345,9 @@ async def _send_preview(
     control: Message, job: RuntimeJob, path: Path, media_format: MediaFormat, context: AppContext
 ) -> None:
     await _delete_old_preview(job, context)
+    path, media_format = await context.pipeline.prepare_chat_sticker(
+        job, path, media_format
+    )
     filename = f"preview{path.suffix.lower()}"
     if media_format == MediaFormat.PNG:
         preview = await _telegram_send(
@@ -355,7 +358,6 @@ async def _send_preview(
         )
     else:
         preview = await context.publisher.send_sticker_file(
-            user_id=job.user_id,
             chat_id=job.chat_id,
             path=path,
             media_format=media_format,
@@ -582,11 +584,13 @@ async def _run_single_result(
         )
         outputs = await context.pipeline.process_all(job)
         item, path = outputs[0]
+        delivery_path, delivery_format = await context.pipeline.prepare_chat_sticker(
+            job, path, detect_format(path)
+        )
         await context.publisher.send_sticker_file(
-            user_id=job.user_id,
             chat_id=job.chat_id,
-            path=path,
-            media_format=detect_format(path),
+            path=delivery_path,
+            media_format=delivery_format,
             cancel_event=job.cancel_event,
             on_flood=lambda remaining: _show_flood_wait(
                 control, job, context, remaining, done=1, total=1

@@ -19,6 +19,7 @@ from app.models.source import MediaFormat, SourceItem
 from app.recolor.color_math import parse_color
 from app.recolor.raster import recolor_raster_file
 from app.recolor.tgs import recolor_tgs_file
+from app.recolor.tgs_webm import render_tgs_webm
 from app.recolor.webm import optimize_webm
 from app.services.scheduler import JobScheduler, WorkKind
 from app.validators.output import validate_processed_output
@@ -39,6 +40,42 @@ class ProcessingPipeline:
     def __init__(self, settings: Settings, scheduler: JobScheduler) -> None:
         self.settings = settings
         self.scheduler = scheduler
+
+    async def prepare_chat_sticker(
+        self,
+        job: RuntimeJob,
+        path: Path,
+        media_format: MediaFormat,
+    ) -> tuple[Path, MediaFormat]:
+        """Prepare a native sendSticker asset while retaining the processed source file."""
+
+        if media_format != MediaFormat.TGS:
+            return path, media_format
+        destination = job.root / "delivery" / f"{path.parent.name}_{path.stem}_chat.webm"
+
+        async def render_operation() -> Path:
+            return await render_tgs_webm(
+                path,
+                destination,
+                side=TELEGRAM_REGULAR_STICKER_SIDE,
+                maximum_bytes=TELEGRAM_WEBM_MAX_BYTES,
+                cancel_event=job.cancel_event,
+                timeout=self.settings.ffmpeg_timeout_seconds,
+            )
+
+        result = await self.scheduler.submit(
+            WorkKind.WEBM,
+            render_operation,
+            is_admin=job.is_admin,
+            heavy=True,
+        )
+        await validate_processed_output(
+            result,
+            expected=MediaFormat.WEBM,
+            pack_custom=False,
+            max_tgs_decompressed=self.settings.max_tgs_json,
+        )
+        return result, MediaFormat.WEBM
 
     async def process_item(
         self,

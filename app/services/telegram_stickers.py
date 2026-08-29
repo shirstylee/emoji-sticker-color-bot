@@ -256,49 +256,24 @@ class StickerPublisher:
     async def send_sticker_file(
         self,
         *,
-        user_id: int,
         chat_id: int,
         path: Path,
         media_format: MediaFormat,
         cancel_event: asyncio.Event,
         on_flood: Callable[[float], Awaitable[None]] | None = None,
     ) -> Message:
-        """Send a processed asset as a sticker, uploading it first when required."""
+        """Send a processed static or video asset as a native Telegram sticker."""
 
         async def send(sticker: FSInputFile | str) -> Message:
             return await self.bot.send_sticker(chat_id=chat_id, sticker=sticker)
 
         if media_format == MediaFormat.TGS:
-            file_id = await self._upload_file(
-                user_id,
-                path,
-                media_format,
-                cancel_event,
-                on_flood,
+            raise ValueError(
+                "TGS cannot be sent using an uploadStickerFile file_id; "
+                "render it to WEBM for chat delivery"
             )
-            return await self.controller.call(
-                lambda: send(file_id),
-                cancel_event,
-                on_flood=on_flood,
-            )
-        try:
-            return await self.controller.call(
-                lambda: send(FSInputFile(path, filename=f"sticker{path.suffix.lower()}")),
-                cancel_event,
-                on_flood=on_flood,
-            )
-        except TelegramBadRequest as error:
-            if not _wrong_file_type(error):
-                raise
-        file_id = await self._upload_file(
-            user_id,
-            path,
-            media_format,
-            cancel_event,
-            on_flood,
-        )
         return await self.controller.call(
-            lambda: send(file_id),
+            lambda: send(FSInputFile(path, filename=f"sticker{path.suffix.lower()}")),
             cancel_event,
             on_flood=on_flood,
         )

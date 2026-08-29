@@ -87,6 +87,10 @@ def normalize_tgs_timing(document: dict[str, Any]) -> dict[str, Any]:
 
     scale_frames(output)
     output["fr"] = 60
+    # Telegram identifies animated sticker payloads by this format marker.
+    # Some exported Lottie files omit it even though their remaining structure
+    # is valid, which makes Bot API uploads fail with ``wrong file type``.
+    output["tgs"] = 1
     validate_tgs_document(output)
     return output
 

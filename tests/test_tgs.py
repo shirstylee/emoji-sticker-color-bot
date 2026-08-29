@@ -123,6 +123,7 @@ def test_nonstandard_tgs_timing_is_normalized_to_telegram_requirements() -> None
     output = normalize_tgs_timing(source)
 
     assert output["fr"] == 60
+    assert output["tgs"] == 1
     assert float(output["op"]) - float(output["ip"]) == 180
     assert output["layers"][0]["shapes"][1]["c"]["k"][0]["t"] == 90  # type: ignore[index]
 
