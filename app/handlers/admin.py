@@ -81,7 +81,9 @@ STATUS_LABELS = {
     "awaiting_output_type": "Выбор результата",
     "awaiting_pack_name": "Ожидание названия",
     "awaiting_split_confirmation": "Ожидание разделения",
+    "awaiting_result_action": "Ожидание действия с результатом",
     "processing": "Обработка",
+    "download": "Скачивание файла",
     "publishing": "Публикация",
     "completed": "Завершено",
     "cancelled": "Отменено",
@@ -172,6 +174,18 @@ async def admin_command(message: Message, context: AppContext) -> None:
 
 
 def _admin_action_keyboard(context: AppContext, action: str, label: str) -> InlineKeyboardMarkup:
+    if label == "Назад":
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="Назад",
+                        callback_data=f"admin:{action}",
+                        icon_custom_emoji_id=context.premium.button_id("BACK"),
+                    )
+                ]
+            ]
+        )
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -190,6 +204,12 @@ def _admin_action_keyboard(context: AppContext, action: str, label: str) -> Inli
             ],
         ]
     )
+
+
+def _admin_back_keyboard(
+    context: AppContext, action: str = "refresh"
+) -> InlineKeyboardMarkup:
+    return _admin_action_keyboard(context, action, "Назад")
 
 
 async def _edit_admin(
@@ -212,6 +232,7 @@ async def admin_callback(
     parts = (callback.data or "").split(":")
     action = parts[1] if len(parts) > 1 else "refresh"
     owner = await context.admins.is_owner(callback.from_user.id)
+    await state.clear()
     if action == "refresh":
         await state.clear()
         await _edit_admin(
@@ -236,11 +257,15 @@ async def admin_callback(
             age = _duration((datetime.now(UTC) - job.created_at).total_seconds())
             source = job.source.kind.value if job.source else "source"
             lines.append(
-                f"\n<b>Задача #{job.short_id}</b>\n"
-                f"Тип: {SOURCE_LABELS.get(source, 'Источник')}\n"
-                f"Элементов: {job.total}\nХод выполнения: {job.progress} / {job.total}\n"
-                f"Состояние: {STATUS_LABELS.get(job.status.value, 'Неизвестно')}\n"
-                f"Выполняется: {age}"
+                f'\n{context.premium.html("LOADING")} <b>Задача #{job.short_id}</b>\n'
+                f'{context.premium.html("FILE")} Тип: '
+                f"{SOURCE_LABELS.get(source, 'Источник')}\n"
+                f'{context.premium.html("PACK")} Элементов: {job.total}\n'
+                f'{context.premium.html("CHART")} Ход выполнения: '
+                f"{job.progress} / {job.total}\n"
+                f'{context.premium.html("INFO")} Состояние: '
+                f"{STATUS_LABELS.get(job.status.value, 'Неизвестно')}\n"
+                f'{context.premium.html("TIME")} Выполняется: {age}'
             )
             rows.append(
                 [
@@ -289,15 +314,20 @@ async def admin_callback(
         disk = psutil.disk_usage(str(context.settings.temp_root))
         body = (
             f'{context.premium.html("CPU")} <b>Нагрузка</b>\n\n'
-            f"CPU: {psutil.cpu_percent(interval=None):.1f}%\n"
-            f"Оперативная память: {memory.percent:.1f}% "
+            "<blockquote>"
+            f'{context.premium.html("CPU")} CPU: {psutil.cpu_percent(interval=None):.1f}%\n'
+            f'{context.premium.html("RAM")} Оперативная память: {memory.percent:.1f}% '
             f"({memory.available / 1024 / 1024:.0f} МиБ свободно)\n"
-            f"Диск: {disk.free / 1024 / 1024 / 1024:.1f} ГиБ свободно\n"
-            f"Обработчики TGS: {context.settings.tgs_workers}\n"
-            f"Обработчики изображений: {context.settings.raster_workers}\n"
-            f"Обработчики WEBM: {context.settings.webm_workers}"
+            f'{context.premium.html("DISK")} Диск: '
+            f"{disk.free / 1024 / 1024 / 1024:.1f} ГиБ свободно\n"
+            f'{context.premium.html("SETTINGS")} Обработчики TGS: '
+            f"{context.settings.tgs_workers}\n"
+            f'{context.premium.html("SETTINGS")} Обработчики изображений: '
+            f"{context.settings.raster_workers}\n"
+            f'{context.premium.html("SETTINGS")} Обработчики WEBM: '
+            f"{context.settings.webm_workers}</blockquote>"
         )
-        await _edit_admin(callback, context, body, _admin_action_keyboard(context, "refresh", "Обновить"))
+        await _edit_admin(callback, context, body, _admin_action_keyboard(context, "load", "Обновить"))
     elif action == "stats":
         stats = await context.database.today_statistics()
         body = f'{context.premium.html("CHART")} <b>Статистика сегодня</b>\n\n' + "\n".join(
@@ -308,10 +338,21 @@ async def admin_callback(
     elif action == "telegram":
         body = (
             f'{context.premium.html("LINK")} <b>Telegram API</b>\n\n'
-            f"Публикация: {'активна' if context.scheduler.accepting else 'останавливается'}\n"
-            f"Предварительный ограничитель: {_switch(context.telegram_limiter.enabled)}\n"
-            f"Последнее ожидание: {context.telegram_limiter.last_retry_after or '—'} с\n"
-            "Версия Bot API: 10.3"
+            "<blockquote>"
+            f'{context.premium.html("UPLOAD")} Публикация: '
+            f"{'активна' if context.scheduler.accepting else 'останавливается'}\n"
+            f'{context.premium.html("SETTINGS")} Предварительный ограничитель: '
+            f"{_switch(context.telegram_limiter.enabled)}\n"
+            f'{context.premium.html("TIME")} Последнее ожидание Telegram: '
+            f"{context.telegram_limiter.last_retry_after or '—'} с\n"
+            f'{context.premium.html("CHART")} Предварительное окно: '
+            f"{context.telegram_limiter.requests} запросов / "
+            f"{context.telegram_limiter.window} с\n"
+            f'{context.premium.html("BOT")} Версия Bot API: 10.3'
+            "</blockquote>\n\n"
+            "Предварительный режим ограничивает число запросов, а не число эмодзи. "
+            "Он необязателен. Ответ <code>retry_after</code> от Telegram всегда имеет "
+            "приоритет: бот показывает таймер и продолжает ту же операцию автоматически."
         )
         markup = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -322,7 +363,13 @@ async def admin_callback(
                         icon_custom_emoji_id=context.premium.button_id("SETTINGS"),
                     )
                 ],
-                [InlineKeyboardButton(text="Назад", callback_data="admin:refresh")],
+                [
+                    InlineKeyboardButton(
+                        text="Назад",
+                        callback_data="admin:refresh",
+                        icon_custom_emoji_id=context.premium.button_id("BACK"),
+                    )
+                ],
             ]
         )
         await _edit_admin(callback, context, body, markup)
@@ -370,16 +417,34 @@ async def admin_callback(
                         icon_custom_emoji_id=context.premium.button_id("DELETE"),
                     ),
                 ],
-                [InlineKeyboardButton(text="Назад", callback_data="admin:refresh")],
+                [
+                    InlineKeyboardButton(
+                        text="Назад",
+                        callback_data="admin:refresh",
+                        icon_custom_emoji_id=context.premium.button_id("BACK"),
+                    )
+                ],
             ]
         )
         await _edit_admin(callback, context, body, markup)
     elif action == "add_admin" and owner:
         await state.set_state(AdminStates.awaiting_add_id)
-        await _edit_admin(callback, context, "Отправьте числовой Telegram ID нового администратора.")
+        await _edit_admin(
+            callback,
+            context,
+            f'{context.premium.html("ADD")} <b>Добавление администратора</b>\n\n'
+            "<blockquote>Отправьте числовой Telegram ID нового администратора.</blockquote>",
+            _admin_back_keyboard(context, "admins"),
+        )
     elif action == "remove_admin" and owner:
         await state.set_state(AdminStates.awaiting_remove_id)
-        await _edit_admin(callback, context, "Отправьте числовой Telegram ID администратора.")
+        await _edit_admin(
+            callback,
+            context,
+            f'{context.premium.html("DELETE")} <b>Удаление администратора</b>\n\n'
+            "<blockquote>Отправьте числовой Telegram ID администратора.</blockquote>",
+            _admin_back_keyboard(context, "admins"),
+        )
     elif action == "errors":
         errors = context.errors.latest()
         body = f'{context.premium.html("WARNING")} <b>Ошибки</b>\n\n'
@@ -437,10 +502,16 @@ async def add_admin_message(message: Message, context: AppContext, state: FSMCon
         target = int((message.text or "").strip())
         await context.admins.add(message.from_user.id, target)
     except (ValueError, PermissionError):
-        await message.answer("Укажите корректный числовой Telegram ID.")
+        await message.answer(
+            f'{context.premium.html("ERROR")} Укажите корректный числовой Telegram ID.',
+            reply_markup=_admin_back_keyboard(context, "admins"),
+        )
         return
     await state.clear()
-    await message.answer("Администратор добавлен.")
+    await message.answer(
+        f'{context.premium.html("SUCCESS")} Администратор добавлен.',
+        reply_markup=_admin_back_keyboard(context, "admins"),
+    )
 
 
 @router.message(AdminStates.awaiting_remove_id)
@@ -452,10 +523,18 @@ async def remove_admin_message(message: Message, context: AppContext, state: FSM
         target = int((message.text or "").strip())
         removed = await context.admins.remove(message.from_user.id, target)
     except (ValueError, PermissionError):
-        await message.answer("Укажите корректный числовой Telegram ID.")
+        await message.answer(
+            f'{context.premium.html("ERROR")} Укажите корректный числовой Telegram ID.',
+            reply_markup=_admin_back_keyboard(context, "admins"),
+        )
         return
     await state.clear()
-    await message.answer("Администратор удалён." if removed else "Владельца удалить нельзя.")
+    icon = "SUCCESS" if removed else "WARNING"
+    await message.answer(
+        f'{context.premium.html(icon)} '
+        + ("Администратор удалён." if removed else "Владельца удалить нельзя."),
+        reply_markup=_admin_back_keyboard(context, "admins"),
+    )
 
 
 @router.message(AdminStates.awaiting_limit)
@@ -465,16 +544,25 @@ async def limit_message(message: Message, context: AppContext, state: FSMContext
         return
     parts = (message.text or "").split()
     if len(parts) != 2 or parts[0] not in context.limits.as_settings():
-        await message.answer("Формат: <code>jobs_hour 12</code>")
+        await message.answer(
+            f'{context.premium.html("INFO")} Формат: <code>jobs_hour 12</code>',
+            reply_markup=_admin_back_keyboard(context),
+        )
         return
     try:
         value = int(parts[1])
         if not 1 <= value <= 10000:
             raise ValueError
     except ValueError:
-        await message.answer("Значение должно быть целым числом 1..10000.")
+        await message.answer(
+            f'{context.premium.html("ERROR")} Значение должно быть целым числом 1..10000.',
+            reply_markup=_admin_back_keyboard(context),
+        )
         return
     setattr(context.limits, parts[0], value)
     await context.database.set_setting(f"limit.{parts[0]}", value)
     await state.clear()
-    await message.answer("Лимит обновлён.")
+    await message.answer(
+        f'{context.premium.html("SUCCESS")} Лимит обновлён.',
+        reply_markup=_admin_back_keyboard(context),
+    )

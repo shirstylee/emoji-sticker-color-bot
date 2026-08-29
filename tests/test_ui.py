@@ -8,14 +8,17 @@ import pytest
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import EditMessageText
 
+from app.handlers.admin import _admin_action_keyboard
 from app.i18n.en import EN
 from app.i18n.ru import RU
 from app.keyboards.admin import admin_keyboard
 from app.keyboards.user import (
     color_keyboard,
+    information_keyboard,
     language_keyboard,
     main_menu_keyboard,
     processing_keyboard,
+    single_result_keyboard,
 )
 from app.main import (
     ADMIN_COMMANDS_EN,
@@ -101,18 +104,22 @@ def test_rich_messages_render_with_real_premium_emoji(
         "title": "Example",
         "kind": "TGS",
         "count": 1,
+        "done": 1,
+        "total": 1,
         "formats": "TGS: 1",
         "color": "#2196F3",
         "pack_list": "Example pack",
         **registry.placeholders(),
     }
     expected_icon_counts = {
-        "main_menu": 3,
+        "main_menu": 5,
         "send_source": 5,
         "my_packs": 2,
-        "information": 3,
+        "information": 4,
         "source_found": 6,
+        "pack_source_found": 6,
         "choose_output": 2,
+        "pack_choose_output": 4,
         "preview_ready": 2,
         "publishing": 2,
         "done_file": 2,
@@ -132,11 +139,37 @@ def test_rich_messages_render_with_real_premium_emoji(
     assert "Стикер — отдельным сообщением" in RU["send_source"]
 
 
+def test_single_result_and_information_actions(
+    registry: PremiumEmojiRegistry,
+) -> None:
+    result = single_result_keyboard(registry, "job", "ru")
+    assert [row[0].callback_data for row in result.inline_keyboard] == [
+        "job:job:single_pack",
+        "job:job:download",
+        "job:job:restart",
+    ]
+    assert result.inline_keyboard[0][0].style == "primary"
+
+    information = information_keyboard(registry, "ru")
+    assert str(information.inline_keyboard[0][0].url) == "https://t.me/jawface"
+    assert information.inline_keyboard[1][0].callback_data == "menu:home"
+
+
 def test_admin_panel_has_back_to_main_menu(registry: PremiumEmojiRegistry) -> None:
     keyboard = admin_keyboard(registry, owner=True)
     back = keyboard.inline_keyboard[-1][0]
     assert back.text == "Назад"
     assert back.callback_data == "admin:close"
+
+
+def test_admin_subview_has_only_one_back_button(
+    registry: PremiumEmojiRegistry,
+) -> None:
+    context = SimpleNamespace(premium=registry)
+    keyboard = _admin_action_keyboard(context, "refresh", "Назад")  # type: ignore[arg-type]
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+    assert len(buttons) == 1
+    assert buttons[0].callback_data == "admin:refresh"
 
 
 def test_bot_commands_are_localized_without_slash_labels() -> None:

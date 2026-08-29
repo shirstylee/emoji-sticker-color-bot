@@ -14,6 +14,7 @@ from aiogram.types import CallbackQuery, Message
 from app.context import AppContext
 from app.i18n import text
 from app.keyboards.user import (
+    information_keyboard,
     language_keyboard,
     main_menu_keyboard,
     menu_back_keyboard,
@@ -303,7 +304,7 @@ async def menu_callback(callback: CallbackQuery, context: AppContext) -> None:
                 icon=context.premium.html("INFO"),
                 **context.premium.placeholders(),
             ),
-            reply_markup=menu_back_keyboard(context.premium, language),
+            reply_markup=information_keyboard(context.premium, language),
         )
 
 

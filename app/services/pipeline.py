@@ -122,7 +122,11 @@ class ProcessingPipeline:
             )
             return result
         if item.format == MediaFormat.WEBM:
-            side = TELEGRAM_CUSTOM_EMOJI_SIDE if custom_emoji else TELEGRAM_REGULAR_STICKER_SIDE
+            side = (
+                TELEGRAM_CUSTOM_EMOJI_SIDE
+                if custom_emoji and not preview
+                else TELEGRAM_REGULAR_STICKER_SIDE
+            )
 
             async def webm_operation() -> Path:
                 return await optimize_webm(
@@ -146,10 +150,15 @@ class ProcessingPipeline:
             await validate_processed_output(
                 result,
                 expected=MediaFormat.WEBM,
-                pack_custom=pack_custom,
+                pack_custom=None if preview else pack_custom,
                 max_tgs_decompressed=self.settings.max_tgs_json,
             )
             return result
+
+        if preview:
+            # A raster preview is a chat photo, not a Telegram sticker asset.
+            # Keeping it as PNG avoids WEBP sticker-dimension/type rejection.
+            destination = directory / f"{item.index:03d}.png"
 
         async def raster_operation() -> Path:
             return await asyncio.to_thread(
@@ -176,8 +185,8 @@ class ProcessingPipeline:
         )
         await validate_processed_output(
             result,
-            expected=item.format,
-            pack_custom=pack_custom,
+            expected=MediaFormat.PNG if preview else item.format,
+            pack_custom=None if preview else pack_custom,
             max_tgs_decompressed=self.settings.max_tgs_json,
         )
         return result

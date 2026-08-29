@@ -341,10 +341,18 @@ def strong_tint_tgs_document(
     document: dict[str, Any], target: ParsedColor
 ) -> dict[str, Any]:
     output = copy.deepcopy(document)
-    rgb = [channel / 255.0 for channel in target.rgb]
+    colors: list[list[float]] = []
+    _collect_walk(output, colors)
+    midpoint = palette_lightness_midpoint(colors)
 
     def transform(color: list[float]) -> list[float]:
-        return [*rgb, *list(color[3:])]
+        return recolor_normalized_color(
+            color,
+            target,
+            source_midpoint=midpoint,
+            chroma_scale=1.35,
+            contrast_scale=0.62,
+        )
 
     _transform_walk(output, transform)
     return output

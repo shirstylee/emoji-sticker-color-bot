@@ -201,7 +201,14 @@ async def recolor_webm_file(
                     adaptive_alpha, frame[..., :3], alpha
                 )
             elif strong:
-                output[..., :3] = np.asarray(target.rgb, dtype=np.uint8)
+                output[..., :3] = await asyncio.to_thread(
+                    recolor_rgb,
+                    frame[..., :3],
+                    target,
+                    weights=alpha.astype(np.float64) / 255.0,
+                    chroma_scale=1.35,
+                    contrast_scale=0.62,
+                )
                 output[..., 3] = alpha
             else:
                 output[..., :3] = await asyncio.to_thread(

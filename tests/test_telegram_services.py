@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.methods import SendSticker
 
 from app.database.admins import AdminService
 from app.handlers.admin import admin_command
@@ -132,6 +134,7 @@ async def test_429_pack_integration_does_not_duplicate_items(tmp_path: Path) -> 
 
     bot = FakeBot()
     publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
+    progress: list[tuple[int, int]] = []
     files = [
         (tmp_path / f"{index}.webp", MediaFormat.WEBP, ("🎨",)) for index in range(51)
     ]
@@ -143,11 +146,96 @@ async def test_429_pack_integration_does_not_duplicate_items(tmp_path: Path) -> 
         custom_emoji=False,
         needs_repainting=False,
         cancel_event=asyncio.Event(),
+        on_progress=lambda done, total: _append_progress(progress, done, total),
     )
     assert name.endswith("_by_ColorBot")
     assert bot.created == 1
     assert bot.add_attempts == 2
     assert bot.successful_adds == 1
+    assert progress == [(50, 51), (51, 51)]
+
+
+async def _append_progress(
+    target: list[tuple[int, int]], done: int, total: int
+) -> None:
+    target.append((done, total))
+
+
+@pytest.mark.asyncio
+async def test_wrong_file_type_uploads_before_retrying_pack_creation(
+    tmp_path: Path,
+) -> None:
+    class FakeBot:
+        def __init__(self) -> None:
+            self.create_calls: list[dict[str, object]] = []
+            self.uploads = 0
+
+        async def create_new_sticker_set(self, **kwargs: object) -> bool:
+            self.create_calls.append(kwargs)
+            if len(self.create_calls) == 1:
+                raise TelegramBadRequest(
+                    SendSticker(chat_id=1, sticker="invalid"),
+                    "Bad Request: wrong file type",
+                )
+            return True
+
+        async def upload_sticker_file(self, **_: object) -> object:
+            self.uploads += 1
+            return SimpleNamespace(file_id="uploaded-file-id")
+
+    path = tmp_path / "one.tgs"
+    path.write_bytes(b"payload")
+    bot = FakeBot()
+    publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
+
+    await publisher.publish_set(
+        user_id=1,
+        title="Pack",
+        bot_username="ColorBot",
+        files=[(path, MediaFormat.TGS, ("🎨",))],
+        custom_emoji=True,
+        needs_repainting=False,
+        cancel_event=asyncio.Event(),
+    )
+
+    assert bot.uploads == 1
+    retried = bot.create_calls[1]["stickers"]
+    assert retried[0].sticker == "uploaded-file-id"  # type: ignore[index]
+
+
+@pytest.mark.asyncio
+async def test_sticker_send_falls_back_to_uploaded_file_id(tmp_path: Path) -> None:
+    class FakeBot:
+        def __init__(self) -> None:
+            self.sent: list[object] = []
+
+        async def send_sticker(self, **kwargs: object) -> object:
+            self.sent.append(kwargs["sticker"])
+            if len(self.sent) == 1:
+                raise TelegramBadRequest(
+                    SendSticker(chat_id=1, sticker="invalid"),
+                    "Bad Request: wrong file type",
+                )
+            return SimpleNamespace(message_id=7)
+
+        async def upload_sticker_file(self, **_: object) -> object:
+            return SimpleNamespace(file_id="uploaded-file-id")
+
+    path = tmp_path / "one.tgs"
+    path.write_bytes(b"payload")
+    bot = FakeBot()
+    publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
+
+    result = await publisher.send_sticker_file(
+        user_id=1,
+        chat_id=1,
+        path=path,
+        media_format=MediaFormat.TGS,
+        cancel_event=asyncio.Event(),
+    )
+
+    assert result.message_id == 7  # type: ignore[attr-defined]
+    assert bot.sent[1] == "uploaded-file-id"
 
 
 @pytest.mark.asyncio

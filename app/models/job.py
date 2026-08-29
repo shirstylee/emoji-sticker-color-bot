@@ -19,6 +19,7 @@ class JobStatus(StrEnum):
     AWAITING_OUTPUT_TYPE = "awaiting_output_type"
     AWAITING_PACK_NAME = "awaiting_pack_name"
     AWAITING_SPLIT_CONFIRMATION = "awaiting_split_confirmation"
+    AWAITING_RESULT_ACTION = "awaiting_result_action"
     PROCESSING = "processing"
     PUBLISHING = "publishing"
     COMPLETED = "completed"
@@ -59,6 +60,7 @@ class RuntimeJob:
     processing_task: asyncio.Task[object] | None = None
     created_sets: list[str] = field(default_factory=list)
     errors: list[tuple[int, str]] = field(default_factory=list)
+    statistics_recorded: bool = False
 
     @property
     def short_id(self) -> str:
@@ -72,6 +74,7 @@ class RuntimeJob:
             JobStatus.AWAITING_OUTPUT_TYPE,
             JobStatus.AWAITING_PACK_NAME,
             JobStatus.AWAITING_SPLIT_CONFIRMATION,
+            JobStatus.AWAITING_RESULT_ACTION,
         }
 
     def touch(self) -> None:

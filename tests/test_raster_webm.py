@@ -52,12 +52,18 @@ def test_adaptive_mask_preserves_symbol_as_negative_space() -> None:
     assert np.all(result[..., :3] == 255)
 
 
-def test_existing_adaptive_emoji_gets_strong_exact_tint() -> None:
-    image = Image.new("RGBA", (4, 4), (245, 245, 245, 190))
-    result = np.asarray(
-        recolor_image(image, parse_color("#2196F3"), strong=True)
+def test_existing_adaptive_emoji_gets_strong_tint_without_flattening() -> None:
+    pixels = np.array(
+        [[[245, 245, 245, 190], [120, 120, 120, 190], [30, 30, 30, 190]]],
+        dtype=np.uint8,
     )
-    assert np.all(result[..., :3] == [33, 150, 243])
+    result = np.asarray(
+        recolor_image(Image.fromarray(pixels, "RGBA"), parse_color("#2196F3"), strong=True)
+    )
+    colors = result[0, :, :3]
+    assert np.all(colors[:, 2] > colors[:, 0])
+    assert len({tuple(color) for color in colors.tolist()}) == 3
+    assert int(colors[0].sum()) > int(colors[1].sum()) > int(colors[2].sum())
     assert np.all(result[..., 3] == 190)
 
 
@@ -150,7 +156,9 @@ async def test_pipeline_applies_strong_tint_to_existing_adaptive_source(
 
     source = tmp_path / "source" / "001.png"
     source.parent.mkdir(parents=True)
-    Image.new("RGBA", (100, 100), (245, 245, 245, 210)).save(source)
+    pixels = np.full((100, 100, 4), (245, 245, 245, 210), dtype=np.uint8)
+    pixels[25:75, 25:75, :3] = (80, 80, 80)
+    Image.fromarray(pixels, "RGBA").save(source)
     item = SourceItem(
         index=1,
         path=source,
@@ -176,7 +184,9 @@ async def test_pipeline_applies_strong_tint_to_existing_adaptive_source(
     with Image.open(result) as output:
         rgba = np.asarray(output.convert("RGBA"))
         visible = rgba[..., 3] > 0
-        assert np.all(rgba[..., :3][visible] == [255, 0, 0])
+        colored = rgba[..., :3][visible]
+        assert np.all(colored[:, 0] > colored[:, 1])
+        assert len({tuple(color) for color in colored.tolist()}) >= 2
 
 
 @pytest.mark.asyncio

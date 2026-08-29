@@ -9,7 +9,10 @@ EN: dict[str, str] = {
     "language_prompt": "{icon} <b>Choose a language</b>\nВыберите язык",
     "main_menu": (
         "{icon} <b>I recolor Premium Emoji and stickers in any color</b>\n\n"
-        "{color_icon} Original outlines, lighting, shadows, and transparency are preserved.\n\n"
+        "<blockquote>{magic_icon} I change the hue while preserving outlines, lighting, "
+        "shadows, and transparency.\n{preview_icon} A pack preview is shown before full "
+        "processing.\n{pack_icon} Single items, complete packs, and archives are supported."
+        "</blockquote>\n\n"
         "{info_icon} Choose an action:"
     ),
     "send_source": (
@@ -29,7 +32,8 @@ EN: dict[str, str] = {
         "{icon} <b>Emoji &amp; Sticker Color Bot</b>\n\n"
         "{color_icon} Recolors Premium Emoji, stickers, and packs while preserving outlines, "
         "lighting, shadows, and transparency.\n\n"
-        "{file_icon} PNG, WEBP, TGS, WEBM, and ZIP are supported."
+        "{file_icon} PNG, WEBP, TGS, WEBM, and ZIP are supported.\n\n"
+        "{support_icon} Contact technical support if you need assistance."
     ),
     "help": (
         "{icon} <b>Emoji &amp; Sticker Color Bot — help</b>\n\n"
@@ -71,6 +75,18 @@ EN: dict[str, str] = {
         "Tap a code to copy it and send it to the bot. Or open Pick a color, copy the "
         "HEX/RGB code from the website, and send it as a message."
     ),
+    "pack_source_found": (
+        "{icon} <b>Pack ready for processing</b>\n\n"
+        "<blockquote>{edit_icon} Title: {title}\n{info_icon} Type: {kind}\n"
+        "{file_icon} Items: {count}\n{pack_icon} Formats:\n{formats}</blockquote>\n\n"
+        "{color_icon} <b>Choose a color</b>\n\n"
+        "<code>#FFFFFF</code> — White\n<code>#000000</code> — Black\n"
+        "<code>#FF0000</code> — Red\n<code>#FF9800</code> — Orange\n"
+        "<code>#FFEB3B</code> — Yellow\n<code>#4CAF50</code> — Green\n"
+        "<code>#03A9F4</code> — Light blue\n<code>#2196F3</code> — Blue\n"
+        "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink\n\n"
+        "Tap a code, copy it, and send it to the bot, or use Pick a color."
+    ),
     "invalid_color": (
         "Color not recognized. Example: <code>#8B5CF6</code> "
         "or <code>rgb(139, 92, 246)</code>."
@@ -78,6 +94,13 @@ EN: dict[str, str] = {
     "choose_output": (
         "{icon} Color <code>{color}</code> accepted.\n"
         "{pack_icon} Choose an output format:"
+    ),
+    "pack_choose_output": (
+        "{icon} Color <code>{color}</code> selected.\n\n"
+        "<blockquote>{pack_icon} Pack items: <b>{count}</b>.\n"
+        "{time_icon} Telegram determines pauses between operations. The bot shows exact "
+        "progress and resumes automatically after a restriction.</blockquote>\n\n"
+        "{file_icon} Choose the output format:"
     ),
     "preview_ready": (
         "{icon} A preview of the first item is ready.\n"
@@ -92,12 +115,25 @@ EN: dict[str, str] = {
     "invalid_pack_name": "The title must be 1–64 characters. Enter another title.",
     "processing": "{icon} Recoloring…\n{done} / {total}",
     "publishing": (
-        "{icon} Files are ready.\n{pack_icon} Uploading items to Telegram…"
+        "{icon} <b>Creating the pack in Telegram</b>\n\n"
+        "{pack_icon} Items added: <b>{done} / {total}</b>"
     ),
     "flood_wait": (
         "Telegram temporarily limited the upload speed.\n"
+        "{file_icon} Material processed: <b>{done} / {total}</b>\n"
         "Continuing in <code>{seconds}</code>."
     ),
+    "pack_flood_wait": (
+        "Telegram temporarily limited the upload speed.\n"
+        "{pack_icon} Added to the pack: <b>{done} / {total}</b>\n"
+        "Continuing in <code>{seconds}</code>."
+    ),
+    "single_result_ready": (
+        "{icon} <b>Done</b>\n\n{color_icon} Color: <code>{color}</code>\n"
+        "{sticker_icon} The result was sent above as a sticker.\n\n"
+        "{info_icon} You can add it to a new Emoji Pack or download the source file."
+    ),
+    "preparing_download": "{icon} Preparing the downloadable file…",
     "done_file": (
         "{icon} Done. Color: <code>{color}</code>\n"
         "{download_icon} The file was sent above."

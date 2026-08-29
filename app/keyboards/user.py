@@ -18,6 +18,8 @@ BUTTON_LABELS = {
         "emoji_pack": "Эмодзи-пак",
         "sticker_pack": "Стикер-пак",
         "file": "Файл",
+        "download_file": "Скачать файл",
+        "add_emoji_pack": "Добавить в Emoji-набор",
         "zip": "ZIP-архив",
         "add_pack": "Добавить набор",
         "restart": "Перекрасить ещё",
@@ -28,6 +30,7 @@ BUTTON_LABELS = {
         "information": "Информация",
         "open_stickers": "Открыть @Stickers",
         "back": "Назад",
+        "support": "Техническая поддержка",
     },
     "en": {
         "picker": "Pick a color",
@@ -38,6 +41,8 @@ BUTTON_LABELS = {
         "emoji_pack": "Emoji Pack",
         "sticker_pack": "Sticker Pack",
         "file": "File",
+        "download_file": "Download file",
+        "add_emoji_pack": "Add to Emoji Pack",
         "zip": "ZIP archive",
         "add_pack": "Add pack",
         "restart": "Recolor another",
@@ -48,6 +53,7 @@ BUTTON_LABELS = {
         "information": "Information",
         "open_stickers": "Open @Stickers",
         "back": "Back",
+        "support": "Technical support",
     },
 }
 
@@ -134,6 +140,31 @@ def menu_back_keyboard(
                     callback_data="menu:home",
                 )
             ]
+        ]
+    )
+
+
+def information_keyboard(
+    registry: PremiumEmojiRegistry, language: str = "en"
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    registry,
+                    "SUPPORT",
+                    _label(language, "support"),
+                    url="https://t.me/jawface",
+                )
+            ],
+            [
+                _button(
+                    registry,
+                    "BACK",
+                    _label(language, "back"),
+                    callback_data="menu:home",
+                )
+            ],
         ]
     )
 
@@ -272,6 +303,40 @@ def result_keyboard(
         rows.append([_button(registry, "ADD", _label(language, "add_pack"), url=add_url)])
     rows.append([_button(registry, "BRUSH", _label(language, "restart"), callback_data="restart")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def single_result_keyboard(
+    registry: PremiumEmojiRegistry, job_id: str, language: str = "en"
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    registry,
+                    "EMOJI",
+                    _label(language, "add_emoji_pack"),
+                    callback_data=f"job:{job_id}:single_pack",
+                    style="primary",
+                )
+            ],
+            [
+                _button(
+                    registry,
+                    "DOWNLOAD",
+                    _label(language, "download_file"),
+                    callback_data=f"job:{job_id}:download",
+                )
+            ],
+            [
+                _button(
+                    registry,
+                    "BRUSH",
+                    _label(language, "restart"),
+                    callback_data=f"job:{job_id}:restart",
+                )
+            ],
+        ]
+    )
 
 
 def pack_name_keyboard(

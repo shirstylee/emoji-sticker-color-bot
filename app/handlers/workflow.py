@@ -15,7 +15,6 @@ from pathlib import Path
 import psutil
 from aiogram import F, Router
 from aiogram.enums import MessageEntityType
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from app.constants import TELEGRAM_CUSTOM_EMOJI_SET_MAX, TELEGRAM_REGULAR_STICKER_SET_MAX
@@ -32,6 +31,7 @@ from app.keyboards.user import (
     preview_keyboard,
     processing_keyboard,
     result_keyboard,
+    single_result_keyboard,
     split_keyboard,
 )
 from app.logging import safe_error
@@ -66,12 +66,22 @@ async def _show_flood_wait(
     job: RuntimeJob,
     context: AppContext,
     remaining: float,
+    done: int | None = None,
+    total: int | None = None,
+    publishing: bool = False,
 ) -> None:
     try:
         await context.ui.edit(
             control,
             f'{context.premium.html("TIME")} '
-            + text(job.language, "flood_wait", seconds=_countdown(remaining)),
+            + text(
+                job.language,
+                "pack_flood_wait" if publishing else "flood_wait",
+                seconds=_countdown(remaining),
+                done=job.progress if done is None else done,
+                total=job.total if total is None else total,
+                **context.premium.placeholders(),
+            ),
             reply_markup=processing_keyboard(
                 context.premium, job.job_id, job.language
             ),
@@ -97,16 +107,28 @@ async def _telegram_send(
 
 def _job_kind(job: RuntimeJob) -> str:
     if job.source is None:
-        return "Source"
-    names = {
-        SourceKind.STICKER: "Sticker",
-        SourceKind.CUSTOM_EMOJI: "Custom Emoji",
-        SourceKind.PACK: "Telegram Pack",
-        SourceKind.FILE: "File",
-        SourceKind.ZIP: "ZIP",
-        SourceKind.UNICODE: "Unicode Emoji",
-        SourceKind.MEDIA_GROUP: "Media group",
-    }
+        return "Источник" if job.language == "ru" else "Source"
+    names = (
+        {
+            SourceKind.STICKER: "Стикер",
+            SourceKind.CUSTOM_EMOJI: "Premium Emoji",
+            SourceKind.PACK: "Telegram-набор",
+            SourceKind.FILE: "Файл",
+            SourceKind.ZIP: "ZIP-архив",
+            SourceKind.UNICODE: "Unicode Emoji",
+            SourceKind.MEDIA_GROUP: "Группа файлов",
+        }
+        if job.language == "ru"
+        else {
+            SourceKind.STICKER: "Sticker",
+            SourceKind.CUSTOM_EMOJI: "Custom Emoji",
+            SourceKind.PACK: "Telegram Pack",
+            SourceKind.FILE: "File",
+            SourceKind.ZIP: "ZIP",
+            SourceKind.UNICODE: "Unicode Emoji",
+            SourceKind.MEDIA_GROUP: "Media group",
+        }
+    )
     return names[job.source.kind]
 
 
@@ -124,7 +146,7 @@ async def _send_source_card(message: Message, job: RuntimeJob, context: AppConte
     title = html.escape(job.source.title or "—")
     body = text(
         job.language,
-        "source_found",
+        "pack_source_found" if job.source.kind == SourceKind.PACK else "source_found",
         icon=context.premium.html("PACK"),
         title=title,
         kind=_job_kind(job),
@@ -321,8 +343,6 @@ async def _send_preview(
     control: Message, job: RuntimeJob, path: Path, media_format: MediaFormat, context: AppContext
 ) -> None:
     await _delete_old_preview(job, context)
-    if media_format == MediaFormat.TGS and path.suffix.lower() == ".tgs":
-        return
     filename = f"preview{path.suffix.lower()}"
     if media_format == MediaFormat.PNG:
         preview = await _telegram_send(
@@ -332,25 +352,16 @@ async def _send_preview(
             context,
         )
     else:
-        try:
-            preview = await _telegram_send(
-                lambda: control.answer_sticker(FSInputFile(path, filename=filename)),
-                control,
-                job,
-                context,
-            )
-        except TelegramBadRequest as error:
-            if "wrong file type" not in str(error).lower():
-                raise
-            preview = await _telegram_send(
-                lambda: control.answer_document(
-                    FSInputFile(path, filename=filename),
-                    disable_content_type_detection=True,
-                ),
-                control,
-                job,
-                context,
-            )
+        preview = await context.publisher.send_sticker_file(
+            user_id=job.user_id,
+            chat_id=job.chat_id,
+            path=path,
+            media_format=media_format,
+            cancel_event=job.cancel_event,
+            on_flood=lambda remaining: _show_flood_wait(
+                control, job, context, remaining
+            ),
+        )
     job.preview_message_id = preview.message_id
 
 
@@ -378,20 +389,13 @@ async def _select_color(
     if job.source is None:
         return
     if len(job.source.items) == 1:
-        job.status = JobStatus.AWAITING_OUTPUT_TYPE
-        await context.ui.edit(
-            control,
-            text(
-                job.language,
-                "choose_output",
-                icon=context.premium.html("COLOR"),
-                color=color.hex,
-                **context.premium.placeholders(),
-            ),
-            reply_markup=output_keyboard(
-                context.premium, job.job_id, single=True, language=job.language
-            ),
+        job.output_type = OutputType.STICKER_PACK
+        job.status = JobStatus.PROCESSING
+        task = asyncio.create_task(
+            _run_single_result(control, job, context),
+            name=f"single-{job.short_id}",
         )
+        job.processing_task = task
         return
     job.status = JobStatus.GENERATING_PREVIEW
     preview_error: Exception | None = None
@@ -556,9 +560,86 @@ async def _start_processing(control: Message, job: RuntimeJob, context: AppConte
     job.processing_task = task
 
 
+async def _run_single_result(
+    control: Message, job: RuntimeJob, context: AppContext
+) -> None:
+    started = time.monotonic()
+    try:
+        await context.ui.edit(
+            control,
+            text(
+                job.language,
+                "processing",
+                icon=context.premium.html("LOADING"),
+                done=0,
+                total=1,
+            ),
+            reply_markup=processing_keyboard(
+                context.premium, job.job_id, job.language
+            ),
+        )
+        outputs = await context.pipeline.process_all(job)
+        item, path = outputs[0]
+        await context.publisher.send_sticker_file(
+            user_id=job.user_id,
+            chat_id=job.chat_id,
+            path=path,
+            media_format=detect_format(path),
+            cancel_event=job.cancel_event,
+            on_flood=lambda remaining: _show_flood_wait(
+                control, job, context, remaining, done=1, total=1
+            ),
+        )
+        job.status = JobStatus.AWAITING_RESULT_ACTION
+        await context.ui.edit(
+            control,
+            text(
+                job.language,
+                "single_result_ready",
+                icon=context.premium.html("SUCCESS"),
+                color=job.selected_color or "Adaptive",
+                **context.premium.placeholders(),
+            ),
+            reply_markup=single_result_keyboard(
+                context.premium, job.job_id, job.language
+            ),
+        )
+        if not job.statistics_recorded:
+            await record_job_result(
+                context.database,
+                success=True,
+                processed=1,
+                tgs=int(item.format == MediaFormat.TGS),
+                webm=int(item.format == MediaFormat.WEBM),
+                raster=int(item.format in {MediaFormat.PNG, MediaFormat.WEBP}),
+                processing_ms=round((time.monotonic() - started) * 1000),
+            )
+            job.statistics_recorded = True
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        context.errors.add(job_id=job.job_id, component="processing", error=error)
+        safe_error(LOGGER, "processing", error, job.job_id)
+        if not job.statistics_recorded:
+            await record_job_result(
+                context.database,
+                success=False,
+                processed=job.progress,
+                processing_ms=round((time.monotonic() - started) * 1000),
+            )
+        with contextlib.suppress(Exception):
+            await context.ui.edit(
+                control,
+                f'{context.premium.html("ERROR")} '
+                + text(job.language, "service_error"),
+            )
+        await context.jobs.finish(job.job_id, JobStatus.FAILED)
+
+
 async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> None:
     started = time.monotonic()
     last_progress = 0.0
+    final_status = JobStatus.COMPLETED
 
     async def progress(done: int, total: int) -> None:
         nonlocal last_progress
@@ -614,28 +695,33 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
         else:
             await _publish_packs(control, job, outputs, context)
         formats = [item.format for item, _ in outputs]
-        await record_job_result(
-            context.database,
-            success=True,
-            processed=len(outputs),
-            tgs=formats.count(MediaFormat.TGS),
-            webm=formats.count(MediaFormat.WEBM),
-            raster=formats.count(MediaFormat.PNG) + formats.count(MediaFormat.WEBP),
-            processing_ms=round((time.monotonic() - started) * 1000),
-        )
+        if not job.statistics_recorded:
+            await record_job_result(
+                context.database,
+                success=True,
+                processed=len(outputs),
+                tgs=formats.count(MediaFormat.TGS),
+                webm=formats.count(MediaFormat.WEBM),
+                raster=formats.count(MediaFormat.PNG) + formats.count(MediaFormat.WEBP),
+                processing_ms=round((time.monotonic() - started) * 1000),
+            )
+            job.statistics_recorded = True
     except asyncio.CancelledError:
+        final_status = JobStatus.CANCELLED
         if job.created_sets:
             await context.publisher.delete_sets(job.created_sets)
         raise
     except Exception as error:
+        final_status = JobStatus.FAILED
         context.errors.add(job_id=job.job_id, component="processing", error=error)
         safe_error(LOGGER, "processing", error, job.job_id)
-        await record_job_result(
-            context.database,
-            success=False,
-            processed=job.progress,
-            processing_ms=round((time.monotonic() - started) * 1000),
-        )
+        if not job.statistics_recorded:
+            await record_job_result(
+                context.database,
+                success=False,
+                processed=job.progress,
+                processing_ms=round((time.monotonic() - started) * 1000),
+            )
         with contextlib.suppress(Exception):
             body = text(job.language, "service_error", icon=context.premium.html("ERROR"))
             if job.errors:
@@ -646,7 +732,7 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
             )
     finally:
         await _delete_old_preview(job, context)
-        await context.jobs.finish(job.job_id, JobStatus.COMPLETED)
+        await context.jobs.finish(job.job_id, final_status)
 
 
 async def _deliver_zip(
@@ -701,12 +787,17 @@ async def _publish_packs(
     custom = job.output_type == OutputType.EMOJI_PACK
     maximum = TELEGRAM_CUSTOM_EMOJI_SET_MAX if custom else TELEGRAM_REGULAR_STICKER_SET_MAX
     title = job.pack_title or "Recolored"
+    job.status = JobStatus.PUBLISHING
+    job.progress = 0
+    job.total = len(outputs)
     await context.ui.edit(
         control,
         text(
             job.language,
             "publishing",
             icon=context.premium.html("UPLOAD"),
+            done=0,
+            total=len(outputs),
             **context.premium.placeholders(),
         ),
         reply_markup=processing_keyboard(context.premium, job.job_id, job.language),
@@ -714,7 +805,55 @@ async def _publish_packs(
     groups = [outputs[index : index + maximum] for index in range(0, len(outputs), maximum)]
     links: list[str] = []
     saved_packs: list[dict[str, str]] = []
+    published = 0
+    last_publication_update = 0.0
     for index, group in enumerate(groups, 1):
+        group_offset = published
+        group_state = {"offset": group_offset, "published": published}
+
+        async def publication_progress(
+            done: int,
+            _total: int,
+            group_state: dict[str, int] = group_state,
+        ) -> None:
+            nonlocal published, last_publication_update
+            published = group_state["offset"] + done
+            group_state["published"] = published
+            job.progress = published
+            now = time.monotonic()
+            if now - last_publication_update < 1.0 and published != len(outputs):
+                return
+            last_publication_update = now
+            with contextlib.suppress(Exception):
+                await context.ui.edit(
+                    control,
+                    text(
+                        job.language,
+                        "publishing",
+                        icon=context.premium.html("UPLOAD"),
+                        done=published,
+                        total=len(outputs),
+                        **context.premium.placeholders(),
+                    ),
+                    reply_markup=processing_keyboard(
+                        context.premium, job.job_id, job.language
+                    ),
+                )
+
+        async def publication_flood(
+            remaining: float,
+            group_state: dict[str, int] = group_state,
+        ) -> None:
+            await _show_flood_wait(
+                control,
+                job,
+                context,
+                remaining,
+                done=group_state["published"],
+                total=len(outputs),
+                publishing=True,
+            )
+
         if len(groups) == 1:
             part_title = title
         else:
@@ -732,10 +871,11 @@ async def _publish_packs(
             custom_emoji=custom,
             needs_repainting=job.adaptive,
             cancel_event=job.cancel_event,
-            on_flood=lambda remaining: _show_flood_wait(
-                control, job, context, remaining
-            ),
+            on_flood=publication_flood,
+            on_progress=publication_progress,
         )
+        published = group_offset + len(group)
+        job.progress = published
         job.created_sets.append(name)
         url = pack_url(name, custom_emoji=custom)
         links.append(url)
@@ -753,15 +893,20 @@ async def _publish_packs(
         {"emoji_packs_created" if custom else "sticker_packs_created": len(links)}
     )
     link_lines = "\n".join(
-        f'<a href="{html.escape(url, quote=True)}">Part {index}</a>'
+        f'<a href="{html.escape(url, quote=True)}">'
+        f'{"Часть" if job.language == "ru" else "Part"} {index}</a>'
         for index, url in enumerate(links, 1)
     )
+    if job.language == "ru":
+        kind_label = "Emoji-набор" if custom else "Набор стикеров"
+    else:
+        kind_label = "Emoji Pack" if custom else "Sticker Pack"
     body = text(
         job.language,
         "done_pack",
         icon=context.premium.html("SUCCESS"),
         title=html.escape(title),
-        kind="Emoji Pack" if custom else "Sticker Pack",
+        kind=kind_label,
         count=len(outputs),
         color=job.selected_color or "Adaptive",
         **context.premium.placeholders(),
@@ -830,6 +975,62 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
         if cancelled and cancelled.created_sets:
             await context.publisher.delete_sets(cancelled.created_sets)
         return
+    if action == "restart":
+        await _delete_old_preview(job, context)
+        await context.jobs.finish(job.job_id, JobStatus.COMPLETED)
+        await show_main_menu(control, context, job.language)
+        return
+    if action == "single_pack":
+        job.output_type = OutputType.EMOJI_PACK
+        await _request_pack_name(control, job, context)
+        return
+    if action == "download":
+        if job.source is None:
+            return
+        job.status = JobStatus.PROCESSING
+        await context.ui.edit(
+            control,
+            text(
+                job.language,
+                "preparing_download",
+                icon=context.premium.html("DOWNLOAD"),
+            ),
+            reply_markup=processing_keyboard(
+                context.premium, job.job_id, job.language
+            ),
+        )
+        job.output_type = OutputType.FILE
+        try:
+            path = await context.pipeline.process_item(job, job.source.items[0])
+            await _telegram_send(
+                lambda: control.answer_document(
+                    FSInputFile(path, filename=f"recolored{path.suffix.lower()}"),
+                    disable_content_type_detection=True,
+                ),
+                control,
+                job,
+                context,
+            )
+        except Exception as error:
+            context.errors.add(job_id=job.job_id, component="download", error=error)
+            await _source_error(control, job.language, context, error)
+        finally:
+            job.output_type = OutputType.STICKER_PACK
+            job.status = JobStatus.AWAITING_RESULT_ACTION
+        await context.ui.edit(
+            control,
+            text(
+                job.language,
+                "single_result_ready",
+                icon=context.premium.html("SUCCESS"),
+                color=job.selected_color or "Adaptive",
+                **context.premium.placeholders(),
+            ),
+            reply_markup=single_result_keyboard(
+                context.premium, job.job_id, job.language
+            ),
+        )
+        return
     if action == "color" and len(parts) == 4:
         await _select_color(control, job, parts[3], context)
     elif action == "recolor":
@@ -850,13 +1051,19 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
         )
     elif action == "continue":
         job.status = JobStatus.AWAITING_OUTPUT_TYPE
+        key = (
+            "pack_choose_output"
+            if job.source is not None and job.source.kind == SourceKind.PACK
+            else "choose_output"
+        )
         await context.ui.edit(
             control,
             text(
                 job.language,
-                "choose_output",
+                key,
                 icon=context.premium.html("COLOR"),
                 color=job.selected_color,
+                count=job.total,
                 **context.premium.placeholders(),
             ),
             reply_markup=output_keyboard(

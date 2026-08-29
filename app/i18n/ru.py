@@ -9,7 +9,10 @@ RU: dict[str, str] = {
     "language_prompt": "{icon} <b>Выберите язык</b>\nChoose a language",
     "main_menu": (
         "{icon} <b>Перекрашиваю Premium Emoji и стикеры в любой цвет</b>\n\n"
-        "{color_icon} Сохраняю исходные контуры, свет, тени и прозрачность.\n\n"
+        "<blockquote>{magic_icon} Меняю оттенок, сохраняя исходные контуры, свет, "
+        "тени и прозрачность.\n{preview_icon} Перед обработкой набора показываю "
+        "предпросмотр результата.\n{pack_icon} Поддерживаю отдельные элементы, "
+        "целые наборы и архивы.</blockquote>\n\n"
         "{info_icon} Выберите действие:"
     ),
     "send_source": (
@@ -29,7 +32,8 @@ RU: dict[str, str] = {
         "{icon} <b>Emoji &amp; Sticker Color Bot</b>\n\n"
         "{color_icon} Перекрашивает Premium Emoji, стикеры и наборы с сохранением "
         "контуров, светотени и прозрачности.\n\n"
-        "{file_icon} Поддерживаются PNG, WEBP, TGS, WEBM и ZIP."
+        "{file_icon} Поддерживаются PNG, WEBP, TGS, WEBM и ZIP.\n\n"
+        "{support_icon} По вопросам работы сервиса обратитесь в техническую поддержку."
     ),
     "help": (
         "{icon} <b>Emoji &amp; Sticker Color Bot — помощь</b>\n\n"
@@ -71,6 +75,19 @@ RU: dict[str, str] = {
         "Нажмите на код, скопируйте его и отправьте боту. Либо откройте «Подобрать цвет», "
         "скопируйте HEX/RGB-код с сайта и отправьте его сообщением."
     ),
+    "pack_source_found": (
+        "{icon} <b>Набор готов к обработке</b>\n\n"
+        "<blockquote>{edit_icon} Название: {title}\n{info_icon} Тип: {kind}\n"
+        "{file_icon} Элементов: {count}\n{pack_icon} Форматы:\n{formats}</blockquote>\n\n"
+        "{color_icon} <b>Выберите цвет</b>\n\n"
+        "<code>#FFFFFF</code> — Белый\n<code>#000000</code> — Чёрный\n"
+        "<code>#FF0000</code> — Красный\n<code>#FF9800</code> — Оранжевый\n"
+        "<code>#FFEB3B</code> — Жёлтый\n<code>#4CAF50</code> — Зелёный\n"
+        "<code>#03A9F4</code> — Голубой\n<code>#2196F3</code> — Синий\n"
+        "<code>#9C27B0</code> — Фиолетовый\n<code>#E91E63</code> — Розовый\n\n"
+        "Нажмите на код, скопируйте его и отправьте боту или воспользуйтесь "
+        "кнопкой «Подобрать цвет»."
+    ),
     "invalid_color": (
         "Не удалось распознать цвет. Пример: <code>#8B5CF6</code> "
         "или <code>rgb(139, 92, 246)</code>."
@@ -78,6 +95,13 @@ RU: dict[str, str] = {
     "choose_output": (
         "{icon} Цвет <code>{color}</code> принят.\n"
         "{pack_icon} Выберите формат результата:"
+    ),
+    "pack_choose_output": (
+        "{icon} Цвет <code>{color}</code> выбран.\n\n"
+        "<blockquote>{pack_icon} В наборе: <b>{count}</b> элементов.\n"
+        "{time_icon} Telegram сам задаёт паузы между операциями. Бот показывает "
+        "точный прогресс и автоматически продолжает работу после ограничения.</blockquote>\n\n"
+        "{file_icon} Выберите формат результата:"
     ),
     "preview_ready": (
         "{icon} Предпросмотр первого элемента готов.\n"
@@ -92,12 +116,25 @@ RU: dict[str, str] = {
     "invalid_pack_name": "Название должно содержать от 1 до 64 символов. Введите другое.",
     "processing": "{icon} Перекрашиваю…\n{done} / {total}",
     "publishing": (
-        "{icon} Файлы готовы.\n{pack_icon} Загружаю элементы в Telegram…"
+        "{icon} <b>Создаю набор в Telegram</b>\n\n"
+        "{pack_icon} Добавлено элементов: <b>{done} / {total}</b>"
     ),
     "flood_wait": (
         "Telegram временно ограничил скорость.\n"
+        "{file_icon} Материал обработан: <b>{done} / {total}</b>\n"
         "Продолжение через <code>{seconds}</code>."
     ),
+    "pack_flood_wait": (
+        "Telegram временно ограничил скорость.\n"
+        "{pack_icon} Добавлено в набор: <b>{done} / {total}</b>\n"
+        "Продолжение через <code>{seconds}</code>."
+    ),
+    "single_result_ready": (
+        "{icon} <b>Готово</b>\n\n{color_icon} Цвет: <code>{color}</code>\n"
+        "{sticker_icon} Результат отправлен выше как стикер.\n\n"
+        "{info_icon} Его можно добавить в новый Emoji-набор или скачать исходным файлом."
+    ),
+    "preparing_download": "{icon} Подготавливаю файл для скачивания…",
     "done_file": (
         "{icon} Готово. Цвет: <code>{color}</code>\n"
         "{download_icon} Файл отправлен выше."

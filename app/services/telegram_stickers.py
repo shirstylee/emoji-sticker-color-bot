@@ -11,7 +11,7 @@ from pathlib import Path
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import FSInputFile, InputSticker
+from aiogram.types import FSInputFile, InputSticker, Message
 from slugify import slugify
 
 from app.constants import (
@@ -59,12 +59,21 @@ def telegram_sticker_format(media_format: MediaFormat) -> str:
     return "static"
 
 
-def input_sticker(path: Path, media_format: MediaFormat, emoji_list: Sequence[str]) -> InputSticker:
+def input_sticker(
+    sticker: Path | str,
+    media_format: MediaFormat,
+    emoji_list: Sequence[str],
+) -> InputSticker:
     return InputSticker(
-        sticker=FSInputFile(path),
+        sticker=FSInputFile(sticker) if isinstance(sticker, Path) else sticker,
         format=telegram_sticker_format(media_format),
         emoji_list=list(emoji_list)[:20] or ["🎨"],
     )
+
+
+def _wrong_file_type(error: TelegramBadRequest) -> bool:
+    message = str(error).lower()
+    return "wrong file type" in message or "sticker_file_invalid" in message
 
 
 class StickerPublisher:
@@ -83,22 +92,26 @@ class StickerPublisher:
         needs_repainting: bool,
         cancel_event: asyncio.Event,
         on_flood: Callable[[float], Awaitable[None]] | None = None,
+        on_progress: Callable[[int, int], Awaitable[None]] | None = None,
     ) -> str:
         maximum = TELEGRAM_CUSTOM_EMOJI_SET_MAX if custom_emoji else TELEGRAM_REGULAR_STICKER_SET_MAX
         if not files or len(files) > maximum:
             raise ValueError("Sticker set item count is outside Telegram limits")
         for attempt in range(6):
             name = generate_short_name(title, bot_username)
-            initial = [input_sticker(*item) for item in files[:TELEGRAM_CREATE_INITIAL_MAX]]
+            initial_files = files[:TELEGRAM_CREATE_INITIAL_MAX]
+            initial = [input_sticker(*item) for item in initial_files]
+            create_state = [initial]
 
             async def create(
-                name: str = name, initial: list[InputSticker] = initial
+                name: str = name,
+                create_state: list[list[InputSticker]] = create_state,
             ) -> bool:
                 return await self.bot.create_new_sticker_set(
                     user_id=user_id,
                     name=name,
                     title=title,
-                    stickers=initial,
+                    stickers=create_state[0],
                     sticker_type="custom_emoji" if custom_emoji else "regular",
                     needs_repainting=needs_repainting if custom_emoji else None,
                 )
@@ -111,19 +124,62 @@ class StickerPublisher:
                     "occupied" in message or ("name" in message and "taken" in message)
                 ):
                     continue
-                raise
+                if not _wrong_file_type(error):
+                    raise
+                initial = [
+                    input_sticker(
+                        await self._upload_file(
+                            user_id,
+                            path,
+                            media_format,
+                            cancel_event,
+                            on_flood,
+                        ),
+                        media_format,
+                        emoji_list,
+                    )
+                    for path, media_format, emoji_list in initial_files
+                ]
+                create_state[0] = initial
+                await self.controller.call(create, cancel_event, on_flood=on_flood)
+            completed = len(initial_files)
+            if on_progress:
+                await on_progress(completed, len(files))
             try:
                 for item in files[TELEGRAM_CREATE_INITIAL_MAX:]:
                     sticker = input_sticker(*item)
+                    add_state = [sticker]
 
                     async def add(
-                        sticker: InputSticker = sticker, name: str = name
+                        name: str = name,
+                        add_state: list[InputSticker] = add_state,
                     ) -> bool:
                         return await self.bot.add_sticker_to_set(
-                            user_id=user_id, name=name, sticker=sticker
+                            user_id=user_id, name=name, sticker=add_state[0]
                         )
 
-                    await self.controller.call(add, cancel_event, on_flood=on_flood)
+                    try:
+                        await self.controller.call(add, cancel_event, on_flood=on_flood)
+                    except TelegramBadRequest as error:
+                        if not _wrong_file_type(error):
+                            raise
+                        path, media_format, emoji_list = item
+                        sticker = input_sticker(
+                            await self._upload_file(
+                                user_id,
+                                path,
+                                media_format,
+                                cancel_event,
+                                on_flood,
+                            ),
+                            media_format,
+                            emoji_list,
+                        )
+                        add_state[0] = sticker
+                        await self.controller.call(add, cancel_event, on_flood=on_flood)
+                    completed += 1
+                    if on_progress:
+                        await on_progress(completed, len(files))
             except BaseException:
                 with contextlib.suppress(Exception):
                     await self.bot.delete_sticker_set(name)
@@ -134,6 +190,64 @@ class StickerPublisher:
                 await self._set_regular_thumbnail(name, user_id, files[0])
             return name
         raise RuntimeError("Could not allocate a Telegram sticker set short name")
+
+    async def _upload_file(
+        self,
+        user_id: int,
+        path: Path,
+        media_format: MediaFormat,
+        cancel_event: asyncio.Event,
+        on_flood: Callable[[float], Awaitable[None]] | None,
+    ) -> str:
+        async def upload() -> object:
+            return await self.bot.upload_sticker_file(
+                user_id=user_id,
+                sticker=FSInputFile(path, filename=f"sticker{path.suffix.lower()}"),
+                sticker_format=telegram_sticker_format(media_format),
+            )
+
+        uploaded = await self.controller.call(upload, cancel_event, on_flood=on_flood)
+        file_id = getattr(uploaded, "file_id", None)
+        if not isinstance(file_id, str) or not file_id:
+            raise RuntimeError("Telegram did not return an uploaded sticker file_id")
+        return file_id
+
+    async def send_sticker_file(
+        self,
+        *,
+        user_id: int,
+        chat_id: int,
+        path: Path,
+        media_format: MediaFormat,
+        cancel_event: asyncio.Event,
+        on_flood: Callable[[float], Awaitable[None]] | None = None,
+    ) -> Message:
+        """Send a processed asset as a sticker, uploading it first when required."""
+
+        async def send(sticker: FSInputFile | str) -> Message:
+            return await self.bot.send_sticker(chat_id=chat_id, sticker=sticker)
+
+        try:
+            return await self.controller.call(
+                lambda: send(FSInputFile(path, filename=f"sticker{path.suffix.lower()}")),
+                cancel_event,
+                on_flood=on_flood,
+            )
+        except TelegramBadRequest as error:
+            if not _wrong_file_type(error):
+                raise
+        file_id = await self._upload_file(
+            user_id,
+            path,
+            media_format,
+            cancel_event,
+            on_flood,
+        )
+        return await self.controller.call(
+            lambda: send(file_id),
+            cancel_event,
+            on_flood=on_flood,
+        )
 
     async def _set_custom_thumbnail(self, name: str) -> None:
         try:

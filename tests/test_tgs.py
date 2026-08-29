@@ -139,4 +139,9 @@ def test_tgs_adaptive_mask_and_strong_tint_preserve_alpha() -> None:
 
     strong = strong_tint_tgs_document(source, parse_color("#FF0000"))
     strong_shapes = strong["layers"][0]["shapes"]  # type: ignore[index]
-    assert strong_shapes[0]["c"]["k"] == [1.0, 0.0, 0.0, 1.0]
+    static = strong_shapes[0]["c"]["k"]
+    animated = strong_shapes[1]["c"]["k"][0]
+    assert static[0] > static[1] and static[0] > static[2]
+    assert static[3] == 1.0
+    assert animated["s"][:3] != animated["e"][:3]
+    assert animated["s"][3] == animated["e"][3] == 1.0

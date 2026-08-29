@@ -13,7 +13,7 @@
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" />
   <img alt="aiogram 3.31" src="https://img.shields.io/badge/aiogram-3.31-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
   <img alt="Telegram Bot API 10.3" src="https://img.shields.io/badge/Bot_API-10.3-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
-  <img alt="Tests: 110 passed" src="https://img.shields.io/badge/tests-110%20passed-2EA44F?style=flat-square" />
+  <img alt="Tests: 115 passed" src="https://img.shields.io/badge/tests-115%20passed-2EA44F?style=flat-square" />
   <img alt="Interface: Russian, admin RU and EN" src="https://img.shields.io/badge/interface-RU%20%7C%20admin%20RU%20%2F%20EN-7C3AED?style=flat-square" />
 </p>
 
@@ -41,7 +41,8 @@
 - 🎨 **Умная перекраска** — сохранение исходной светимости и прозрачности через linear sRGB и OKLab.
 - 🧩 **Один элемент или целый набор** — поддержка стикеров, Custom Emoji, pack-ссылок, файлов, архивов и альбомов.
 - 🌀 **Нативные форматы Telegram** — безопасная работа с TGS, WEBM, WEBP и PNG без подмены форматов.
-- 📦 **Гибкий результат** — новый Emoji Pack, Sticker Pack, исходный файл или ZIP-архив.
+- 📦 **Гибкий результат** — одиночный результат сразу приходит как стикер; рядом доступны создание Emoji Pack и отдельное скачивание исходного файла. Для наборов доступны Emoji Pack, Sticker Pack и ZIP.
+- 🛡️ **Надёжная публикация** — при несовместимости прямого вложения бот загружает файл через `uploadStickerFile`, повторяет операцию по `file_id` и продолжает после точного Telegram `retry_after`.
 - 🌈 **Любой цвет** — HEX, RGB, короткие HEX-значения и названия базовых цветов.
 - 🌓 **Контрастный Adaptive** — светлые и тёмные детали переносятся в alpha-маску, а уже Adaptive-источники получают насыщенный точный цвет.
 - 💎 **Premium Emoji в интерфейсе** — используются реальные Custom Emoji ID из `Main.txt` с автоматическим Unicode fallback.
@@ -56,8 +57,8 @@
 
 1. 📤 Отправьте боту стикер, Custom Emoji, файл, media group, ZIP или ссылку на Telegram-набор.
 2. 🎯 Откройте HTML Color Picker или нажмите на моноширный код, затем отправьте боту скопированный HEX/RGB.
-3. 👀 Посмотрите превью и при необходимости скорректируйте цвет.
-4. 📦 Выберите формат результата: новый набор, файл или архив.
+3. 👀 Для набора посмотрите превью и при необходимости скорректируйте цвет; одиночный результат сразу появится как стикер.
+4. 📦 Добавьте одиночный результат в Emoji-набор, скачайте файл или выберите формат для целого набора.
 5. ✅ Получите готовый результат — исходные Telegram-наборы никогда не изменяются.
 
 Если большой набор не помещается в один Telegram pack, бот сначала запросит согласие на разбиение.
