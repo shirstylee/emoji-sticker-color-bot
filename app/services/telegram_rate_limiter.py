@@ -39,6 +39,29 @@ class TelegramStickerRateController:
         self._timestamps: deque[float] = deque()
         self._lock = asyncio.Lock()
 
+    async def estimate_conservative_delay(self, cost: int) -> float:
+        """Estimate when ``cost`` more item mutations can fit in the local window."""
+
+        if not self.enabled or cost <= 0:
+            return 0.0
+        async with self._lock:
+            now = time.monotonic()
+            simulated = deque(
+                timestamp
+                for timestamp in self._timestamps
+                if now - timestamp < self.window
+            )
+            cursor = now
+            for _ in range(cost):
+                while simulated and cursor - simulated[0] >= self.window:
+                    simulated.popleft()
+                if len(simulated) >= self.requests:
+                    cursor = max(cursor, simulated[0] + self.window)
+                    while simulated and cursor - simulated[0] >= self.window:
+                        simulated.popleft()
+                simulated.append(cursor)
+            return max(0.0, cursor - now)
+
     async def _conservative_wait(
         self,
         cancel_event: asyncio.Event,

@@ -14,7 +14,13 @@ import psutil
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    BotCommandScopeChat,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from app.context import AppContext
 from app.database.settings import maintenance_enabled
@@ -52,9 +58,12 @@ STAT_LABELS = {
 }
 
 LIMIT_LABELS = {
-    "jobs_10_minutes": "Задач за 10 минут",
-    "jobs_hour": "Задач за час",
-    "jobs_day": "Задач за сутки",
+    "light_jobs_10_minutes": "Одиночных PNG/WEBP за 10 минут",
+    "light_jobs_hour": "Одиночных PNG/WEBP за час",
+    "light_jobs_day": "Одиночных PNG/WEBP за сутки",
+    "jobs_10_minutes": "Тяжёлых/групповых задач за 10 минут",
+    "jobs_hour": "Тяжёлых/групповых задач за час",
+    "jobs_day": "Тяжёлых/групповых задач за сутки",
     "large_hour": "Крупных задач за час",
     "large_day": "Крупных задач за сутки",
     "huge_hour": "Очень крупных задач за час",
@@ -523,6 +532,18 @@ async def remove_admin_message(message: Message, context: AppContext, state: FSM
     try:
         target = int((message.text or "").strip())
         removed = await context.admins.remove(message.from_user.id, target)
+        if removed:
+            context.languages.pop(target, None)
+            scope = BotCommandScopeChat(chat_id=target)
+            try:
+                await context.bot.delete_my_commands(scope=scope)
+                await context.bot.delete_my_commands(scope=scope, language_code="ru")
+                await context.bot.delete_my_commands(scope=scope, language_code="en")
+            except Exception as error:
+                LOGGER.warning(
+                    "Could not clear a removed administrator's command scope | %s",
+                    type(error).__name__,
+                )
     except (ValueError, PermissionError):
         await message.answer(
             f'{context.premium.html("ERROR")} Укажите корректный числовой Telegram ID.',

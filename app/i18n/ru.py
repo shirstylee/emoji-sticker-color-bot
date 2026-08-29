@@ -118,7 +118,8 @@ RU: dict[str, str] = {
     "publishing": (
         "{icon} <b>Создаю набор в Telegram</b>\n\n"
         "{file_icon} Подготовлено файлов: <b>{prepared} / {total}</b>\n"
-        "{pack_icon} Добавлено элементов: <b>{done} / {total}</b>"
+        "{pack_icon} Добавлено элементов: <b>{done} / {total}</b>\n"
+        "{time_icon} Примерная готовность: через <code>{eta}</code>"
     ),
     "flood_wait": (
         "Telegram временно ограничил скорость.\n"
@@ -129,7 +130,8 @@ RU: dict[str, str] = {
         "Telegram ограничивает скорость изменения наборов.\n"
         "{file_icon} Подготовлено файлов: <b>{prepared} / {total}</b>\n"
         "{pack_icon} Добавлено в набор: <b>{done} / {total}</b>\n"
-        "Продолжение через <code>{seconds}</code>."
+        "Продолжение через <code>{seconds}</code>.\n"
+        "{time_icon} Примерная готовность: через <code>{eta}</code>."
     ),
     "single_result_ready": (
         "{icon} <b>Готово</b>\n\n{color_icon} Цвет: <code>{color}</code>\n"
@@ -148,6 +150,10 @@ RU: dict[str, str] = {
     ),
     "partial": "Готово: {done} / {total}\nНе удалось обработать: {failed}",
     "file_too_large": "Файл слишком большой.",
+    "source_invalid": "Файл пустой или повреждён.",
+    "format_mismatch": "Содержимое файла не соответствует заявленному формату.",
+    "image_invalid": "Изображение повреждено или имеет слишком большое разрешение.",
+    "webm_invalid": "WEBM повреждён, не содержит видео или имеет слишком большое разрешение.",
     "archive_invalid": "Архив повреждён или небезопасен.",
     "tgs_invalid": "Не удалось открыть TGS.",
     "video_too_long": "Видео длиннее допустимых 3 секунд.",

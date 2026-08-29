@@ -111,6 +111,7 @@ def test_rich_messages_render_with_real_premium_emoji(
         "done": 1,
         "prepared": 1,
         "total": 1,
+        "eta": "00:15",
         "formats": "TGS: 1",
         "color": "#2196F3",
         "pack_list": "Example pack",
@@ -126,7 +127,7 @@ def test_rich_messages_render_with_real_premium_emoji(
         "choose_output": 2,
         "pack_choose_output": 4,
         "preview_ready": 2,
-        "publishing": 3,
+        "publishing": 4,
         "done_file": 2,
         "done_pack": 5,
     }
@@ -157,6 +158,7 @@ def test_single_result_and_information_actions(
 
     information = information_keyboard(registry, "ru")
     assert str(information.inline_keyboard[0][0].url) == "https://t.me/jawface"
+    assert information.inline_keyboard[0][0].style == "primary"
     assert information.inline_keyboard[1][0].callback_data == "menu:home"
 
 

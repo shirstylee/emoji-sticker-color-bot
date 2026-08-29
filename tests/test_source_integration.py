@@ -17,6 +17,7 @@ from app.models.job import JobStatus
 from app.models.source import MediaFormat, SourceKind
 from app.services.jobs import JobManager
 from app.services.source_resolver import resolve_message
+from app.validators.source import SourceValidationError
 
 
 def webp_bytes() -> bytes:
@@ -76,6 +77,7 @@ class FakeBot:
             "png": png_bytes(),
             "tgs": tgs_bytes(),
             "zip": zip_bytes(),
+            "broken-png": b"\x89PNG\r\n\x1a\nnot-an-image",
         }
 
     async def get_file(self, file_id: str) -> Any:
@@ -189,6 +191,49 @@ async def test_png_and_tgs_document_sources(
     source = await resolve_message(FakeBot(), job, message(document=document), settings)  # type: ignore[arg-type]
     assert source.items[0].format == expected
     await manager.finish(job.job_id)
+
+
+@pytest.mark.asyncio
+async def test_broken_raster_is_rejected_before_color_selection(
+    settings: Settings,
+) -> None:
+    manager, job = await new_job(settings)
+    document = Document(
+        file_id="broken-png",
+        file_unique_id="unique-broken-png",
+        file_name="broken.png",
+        file_size=len(FakeBot().files["broken-png"]),
+    )
+
+    with pytest.raises(SourceValidationError) as caught:
+        await resolve_message(
+            FakeBot(), job, message(document=document), settings  # type: ignore[arg-type]
+        )
+
+    assert caught.value.message_key == "image_invalid"
+    await manager.finish(job.job_id, JobStatus.FAILED)
+
+
+@pytest.mark.asyncio
+async def test_oversized_raster_is_rejected_before_processing(
+    settings: Settings,
+) -> None:
+    settings.max_raster_dimension = 16
+    manager, job = await new_job(settings)
+    document = Document(
+        file_id="png",
+        file_unique_id="unique-large-png",
+        file_name="large.png",
+        file_size=len(FakeBot().files["png"]),
+    )
+
+    with pytest.raises(SourceValidationError) as caught:
+        await resolve_message(
+            FakeBot(), job, message(document=document), settings  # type: ignore[arg-type]
+        )
+
+    assert caught.value.message_key == "image_invalid"
+    await manager.finish(job.job_id, JobStatus.FAILED)
 
 
 @pytest.mark.asyncio

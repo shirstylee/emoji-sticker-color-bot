@@ -117,7 +117,8 @@ EN: dict[str, str] = {
     "publishing": (
         "{icon} <b>Creating the pack in Telegram</b>\n\n"
         "{file_icon} Files prepared: <b>{prepared} / {total}</b>\n"
-        "{pack_icon} Items added: <b>{done} / {total}</b>"
+        "{pack_icon} Items added: <b>{done} / {total}</b>\n"
+        "{time_icon} Estimated readiness: in <code>{eta}</code>"
     ),
     "flood_wait": (
         "Telegram temporarily limited the upload speed.\n"
@@ -128,7 +129,8 @@ EN: dict[str, str] = {
         "Telegram limits the speed of sticker pack changes.\n"
         "{file_icon} Files prepared: <b>{prepared} / {total}</b>\n"
         "{pack_icon} Added to the pack: <b>{done} / {total}</b>\n"
-        "Continuing in <code>{seconds}</code>."
+        "Continuing in <code>{seconds}</code>.\n"
+        "{time_icon} Estimated readiness: in <code>{eta}</code>."
     ),
     "single_result_ready": (
         "{icon} <b>Done</b>\n\n{color_icon} Color: <code>{color}</code>\n"
@@ -147,6 +149,10 @@ EN: dict[str, str] = {
     ),
     "partial": "Done: {done} / {total}\nFailed: {failed}",
     "file_too_large": "The file is too large.",
+    "source_invalid": "The file is empty or damaged.",
+    "format_mismatch": "The file content does not match its declared format.",
+    "image_invalid": "The image is damaged or its resolution is too large.",
+    "webm_invalid": "The WEBM is damaged, has no video, or its resolution is too large.",
     "archive_invalid": "The archive is damaged or unsafe.",
     "tgs_invalid": "Could not open the TGS file.",
     "video_too_long": "The video is longer than the 3-second limit.",

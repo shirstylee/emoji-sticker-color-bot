@@ -7,6 +7,9 @@ from dataclasses import dataclass
 
 @dataclass(slots=True)
 class LimitsConfig:
+    light_jobs_10_minutes: int = 30
+    light_jobs_hour: int = 120
+    light_jobs_day: int = 500
     jobs_10_minutes: int = 3
     jobs_hour: int = 12
     jobs_day: int = 40
@@ -25,4 +28,3 @@ class LimitsConfig:
             for field in self.__dataclass_fields__
             if field not in {"active_regular_jobs", "preview_color_changes"}
         }
-

@@ -15,13 +15,21 @@ class JobWeight:
     large: bool = False
     very_large: bool = False
     heavy_webm: bool = False
+    light_raster: bool = False
 
 
-def classify_job(*, items: int, extracted_bytes: int = 0, webm_items: int = 0) -> JobWeight:
+def classify_job(
+    *,
+    items: int,
+    extracted_bytes: int = 0,
+    webm_items: int = 0,
+    tgs_items: int = 0,
+) -> JobWeight:
     return JobWeight(
         large=items > 50 or extracted_bytes > 25 * 1024 * 1024,
         very_large=items > 120 or extracted_bytes > 75 * 1024 * 1024,
         heavy_webm=webm_items >= 10,
+        light_raster=items == 1 and webm_items == 0 and tgs_items == 0,
     )
 
 
@@ -54,11 +62,18 @@ class UserRateLimiter:
             return
         weight = weight or JobWeight()
         current = time.monotonic() if now is None else now
-        checks: list[tuple[str, float, int]] = [
-            ("total_10m", 600, self.limits.jobs_10_minutes),
-            ("total_1h", 3600, self.limits.jobs_hour),
-            ("total_1d", 86400, self.limits.jobs_day),
-        ]
+        if weight.light_raster:
+            checks: list[tuple[str, float, int]] = [
+                ("light_10m", 600, self.limits.light_jobs_10_minutes),
+                ("light_1h", 3600, self.limits.light_jobs_hour),
+                ("light_1d", 86400, self.limits.light_jobs_day),
+            ]
+        else:
+            checks = [
+                ("total_10m", 600, self.limits.jobs_10_minutes),
+                ("total_1h", 3600, self.limits.jobs_hour),
+                ("total_1d", 86400, self.limits.jobs_day),
+            ]
         if weight.large:
             checks.extend(
                 [("large_1h", 3600, self.limits.large_hour), ("large_1d", 86400, self.limits.large_day)]

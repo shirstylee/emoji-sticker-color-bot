@@ -155,6 +155,7 @@ def information_keyboard(
                     "SUPPORT",
                     _label(language, "support"),
                     url="https://t.me/jawface",
+                    style="primary",
                 )
             ],
             [

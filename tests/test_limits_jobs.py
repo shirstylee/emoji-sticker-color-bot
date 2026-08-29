@@ -8,7 +8,12 @@ import pytest
 from app.models.job import JobStatus, RuntimeJob
 from app.models.limits import LimitsConfig
 from app.services.jobs import ActiveJobError, JobManager
-from app.services.user_rate_limiter import JobWeight, RateLimitExceeded, UserRateLimiter
+from app.services.user_rate_limiter import (
+    JobWeight,
+    RateLimitExceeded,
+    UserRateLimiter,
+    classify_job,
+)
 
 
 @pytest.mark.asyncio
@@ -21,6 +26,32 @@ async def test_rolling_windows_and_admin_bypass() -> None:
     await limiter.check_and_record(1001, is_admin=False, now=601)
     for _ in range(50):
         await limiter.check_and_record(1001, is_admin=True, weight=JobWeight(True, True, True))
+
+
+@pytest.mark.asyncio
+async def test_single_raster_uses_separate_generous_window() -> None:
+    limits = LimitsConfig(
+        light_jobs_10_minutes=4,
+        light_jobs_hour=10,
+        light_jobs_day=10,
+        jobs_10_minutes=1,
+        jobs_hour=1,
+        jobs_day=1,
+    )
+    limiter = UserRateLimiter(limits)
+    light = classify_job(items=1)
+
+    assert light.light_raster is True
+    for current in range(4):
+        await limiter.check_and_record(99, is_admin=False, weight=light, now=current)
+    with pytest.raises(RateLimitExceeded, match="light_10m"):
+        await limiter.check_and_record(99, is_admin=False, weight=light, now=4)
+
+    animated = classify_job(items=1, tgs_items=1)
+    assert animated.light_raster is False
+    await limiter.check_and_record(100, is_admin=False, weight=animated, now=0)
+    with pytest.raises(RateLimitExceeded, match="total_10m"):
+        await limiter.check_and_record(100, is_admin=False, weight=animated, now=1)
 
 
 @pytest.mark.asyncio

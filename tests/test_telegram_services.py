@@ -251,6 +251,24 @@ async def test_conservative_pack_window_counts_items_and_skips_chat_sends(
 
 
 @pytest.mark.asyncio
+async def test_conservative_pack_eta_accounts_for_multiple_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.telegram_rate_limiter.time.monotonic", lambda: 100.0
+    )
+    controller = TelegramStickerRateController(
+        conservative_enabled=True,
+        conservative_requests=8,
+        conservative_window_seconds=240,
+    )
+
+    assert await controller.estimate_conservative_delay(8) == 0.0
+    assert await controller.estimate_conservative_delay(9) == 240.0
+    assert await controller.estimate_conservative_delay(19) == 480.0
+
+
+@pytest.mark.asyncio
 async def test_retry_after_does_not_reserve_local_window_twice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -50,6 +50,7 @@ from app.services.telegram_stickers import pack_url
 from app.services.unicode_emoji import extract_single_emoji
 from app.services.user_rate_limiter import RateLimitExceeded, classify_job
 from app.validators.common import detect_format
+from app.validators.source import SourceValidationError
 
 LOGGER = logging.getLogger(__name__)
 router = Router(name="workflow")
@@ -59,6 +60,22 @@ def _countdown(seconds: float) -> str:
     total = max(0, math.ceil(seconds))
     minutes, remainder = divmod(total, 60)
     return f"{minutes:02d}:{remainder:02d}"
+
+
+async def _pack_eta(
+    context: AppContext,
+    remaining_items: int,
+    *,
+    known_wait: float = 0.0,
+) -> str:
+    local_wait = await context.telegram_limiter.estimate_conservative_delay(
+        remaining_items
+    )
+    # Telegram API calls and the final thumbnail update usually take a few
+    # seconds in addition to the mutation window. Keep this explicitly
+    # approximate instead of promising an exact completion time.
+    api_overhead = remaining_items * 1.5 if remaining_items else 0.0
+    return _countdown(max(known_wait, local_wait) + api_overhead)
 
 
 async def _show_flood_wait(
@@ -72,6 +89,13 @@ async def _show_flood_wait(
     prepared: int | None = None,
 ) -> None:
     try:
+        completed = job.progress if done is None else done
+        expected_total = job.total if total is None else total
+        eta = await _pack_eta(
+            context,
+            max(0, expected_total - completed),
+            known_wait=remaining,
+        )
         await context.ui.edit(
             control,
             f'{context.premium.html("TIME")} '
@@ -79,9 +103,10 @@ async def _show_flood_wait(
                 job.language,
                 "pack_flood_wait" if publishing else "flood_wait",
                 seconds=_countdown(remaining),
-                done=job.progress if done is None else done,
-                total=job.total if total is None else total,
+                done=completed,
+                total=expected_total,
                 prepared=job.progress if prepared is None else prepared,
+                eta=eta,
                 **context.premium.placeholders(),
             ),
             reply_markup=processing_keyboard(
@@ -176,6 +201,12 @@ async def _send_source_card(message: Message, job: RuntimeJob, context: AppConte
 
 
 async def _source_error(message: Message, language: str, context: AppContext, error: Exception) -> None:
+    if isinstance(error, SourceValidationError):
+        await context.ui.answer(
+            message,
+            f'{context.premium.html("ERROR")} {text(language, error.message_key)}',
+        )
+        return
     key = "service_error"
     name = type(error).__name__.lower()
     detail = str(error).lower()
@@ -246,10 +277,16 @@ async def _accept_source(
         job.source = source
         extracted = sum(item.path.stat().st_size for item in source.items)
         webm = sum(item.format == MediaFormat.WEBM for item in source.items)
+        tgs = sum(item.format == MediaFormat.TGS for item in source.items)
         await context.user_limiter.check_and_record(
             user_id,
             is_admin=is_admin,
-            weight=classify_job(items=len(source.items), extracted_bytes=extracted, webm_items=webm),
+            weight=classify_job(
+                items=len(source.items),
+                extracted_bytes=extracted,
+                webm_items=webm,
+                tgs_items=tgs,
+            ),
         )
         job.status = JobStatus.AWAITING_COLOR
         job.total = len(source.items) + len(job.errors)
@@ -797,6 +834,7 @@ async def _publish_packs(
     job.status = JobStatus.PUBLISHING
     job.progress = 0
     job.total = len(outputs)
+    initial_eta = await _pack_eta(context, len(outputs))
     await context.ui.edit(
         control,
         text(
@@ -806,6 +844,7 @@ async def _publish_packs(
             prepared=len(outputs),
             done=0,
             total=len(outputs),
+            eta=initial_eta,
             **context.premium.placeholders(),
         ),
         reply_markup=processing_keyboard(context.premium, job.job_id, job.language),
@@ -836,6 +875,7 @@ async def _publish_packs(
             if now - last_publication_update < 1.0 and published != len(outputs):
                 return
             last_publication_update = now
+            eta = await _pack_eta(context, max(0, len(outputs) - published))
             with contextlib.suppress(Exception):
                 await context.ui.edit(
                     control,
@@ -846,6 +886,7 @@ async def _publish_packs(
                         prepared=group_state["prepared"],
                         done=published,
                         total=len(outputs),
+                        eta=eta,
                         **context.premium.placeholders(),
                     ),
                     reply_markup=processing_keyboard(

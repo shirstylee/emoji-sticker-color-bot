@@ -23,7 +23,7 @@ from app.services.telegram_files import (
     sticker_extension,
 )
 from app.services.unicode_emoji import extract_single_emoji, render_emoji
-from app.validators.common import detect_format
+from app.validators.source import validate_source_file
 
 
 class SourceError(ValueError):
@@ -34,6 +34,21 @@ PACK_LINK_RE = re.compile(
     r"(?i)(?:https?://)?(?:www\.)?t\.me/(?:addstickers|addemoji)/"
     r"[A-Za-z0-9_]{1,64}(?![A-Za-z0-9_/])"
 )
+
+
+async def _validate_download(
+    path: Path,
+    settings: Settings,
+    *,
+    expected: MediaFormat | None = None,
+) -> MediaFormat:
+    return await validate_source_file(
+        path,
+        expected=expected,
+        max_dimension=settings.max_raster_dimension,
+        max_pixels=settings.max_raster_pixels,
+        max_tgs_decompressed=settings.max_tgs_json,
+    )
 
 
 def parse_pack_link(value: str) -> tuple[str, str] | None:
@@ -125,12 +140,8 @@ async def resolve_pack(
                 path = await download_sticker(
                     bot, sticker, source_dir, index, settings.max_input_download
                 )
-                actual = detect_format(path)
                 expected = sticker_format(sticker)
-                if actual != expected:
-                    raise SourceError(
-                        "Telegram sticker content does not match its declared format"
-                    )
+                await _validate_download(path, settings, expected=expected)
                 preview_path: Path | None = None
                 if sticker.thumbnail is not None:
                     try:
@@ -167,8 +178,7 @@ async def resolve_sticker(
     bot: Bot, job: RuntimeJob, sticker: Sticker, settings: Settings
 ) -> SourceDescriptor:
     path = await download_sticker(bot, sticker, job.root / "source", 1, settings.max_input_download)
-    if detect_format(path) != sticker_format(sticker):
-        raise SourceError("Sticker content signature is invalid")
+    await _validate_download(path, settings, expected=sticker_format(sticker))
     kind = SourceKind.CUSTOM_EMOJI if sticker.type == "custom_emoji" else SourceKind.STICKER
     preview_path: Path | None = None
     if sticker.thumbnail is not None:
@@ -207,7 +217,7 @@ async def resolve_document(
     path = await download_document(
         bot, message.document, job.root / "source", 1, settings.max_input_download
     )
-    actual = detect_format(path)
+    actual = await _validate_download(path, settings)
     if path.suffix.lower() == ".zip":
         # ZIP has no short magic branch in detect_format, so direct documents are checked here.
         raise SourceError("ZIP signature was not recognized")
@@ -258,10 +268,12 @@ async def resolve_zip_document(
         max_total_size=settings.max_zip_extracted,
     )
     path.unlink(missing_ok=True)
-    items = [
-        SourceItem(index=index, path=item, format=detect_format(item), original_name=item.name)
-        for index, item in enumerate(extracted, 1)
-    ]
+    items: list[SourceItem] = []
+    for index, item in enumerate(extracted, 1):
+        actual = await _validate_download(item, settings)
+        items.append(
+            SourceItem(index=index, path=item, format=actual, original_name=item.name)
+        )
     return SourceDescriptor(kind=SourceKind.ZIP, items=items, title="ZIP")
 
 
@@ -293,11 +305,12 @@ async def resolve_media_group(
                     )
                 except (OSError, ValueError):
                     preview_path = None
+            actual = await _validate_download(path, settings)
             items.append(
                 SourceItem(
                     index=index,
                     path=path,
-                    format=detect_format(path),
+                    format=actual,
                     preview_path=preview_path,
                     original_name=message.document.file_name,
                 )
@@ -335,6 +348,7 @@ async def resolve_message(
             job.root / "source" / "001.png",
             settings.emoji_font_path,
         )
+        await _validate_download(path, settings, expected=MediaFormat.PNG)
         return SourceDescriptor(
             kind=SourceKind.UNICODE,
             items=[SourceItem(index=1, path=path, format=MediaFormat.PNG, emoji_list=(grapheme,))],
