@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -74,6 +75,20 @@ class ProcessingPipeline:
             if output_type in {OutputType.EMOJI_PACK, OutputType.STICKER_PACK}
             else None
         )
+        if adaptive and item.needs_repainting:
+            # This is already a Telegram-authored Adaptive Custom Emoji asset.
+            # Re-encoding or rebuilding its mask can invalidate complex TGS and
+            # needlessly damages the hand-authored contours. Preserve it exactly.
+            destination = directory / f"{item.index:03d}.{item.format.value}"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            result = await asyncio.to_thread(shutil.copyfile, item.path, destination)
+            await validate_processed_output(
+                result,
+                expected=item.format,
+                pack_custom=None if preview else pack_custom,
+                max_tgs_decompressed=self.settings.max_tgs_json,
+            )
+            return result
         # Telegram thumbnails are often JPEG and therefore have no alpha. They
         # are useful for ordinary TGS previews, but must never be used to build
         # an Adaptive mask or a strong tint because their opaque background

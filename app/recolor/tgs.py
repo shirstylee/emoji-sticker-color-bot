@@ -72,13 +72,32 @@ def normalize_tgs_timing(document: dict[str, Any]) -> dict[str, Any]:
     first = float(output["ip"])
     last = float(output["op"])
     span = last - first
+
+    # Files downloaded from Telegram already satisfy these constraints. Keep
+    # every original number and keyframe byte-for-byte at the JSON value level:
+    # rewriting integer frame times as floats makes complex TGS documents fail
+    # Telegram's stricter server-side sticker validator.
+    if frame_rate == 60.0 and span <= 180.0 + 1e-6:
+        output["tgs"] = 1
+        validate_tgs_document(output)
+        return output
+
     scale = min(60.0 / frame_rate, 180.0 / span)
+
+    def scaled_frame(value: int | float) -> int | float:
+        scaled = float(value) * scale
+        rounded = round(scaled)
+        if abs(scaled - rounded) <= 1e-9:
+            return int(rounded)
+        return scaled
 
     def scale_frames(value: Any) -> None:
         if isinstance(value, dict):
             for key, child in value.items():
-                if key in {"ip", "op", "st", "t"} and isinstance(child, (int, float)):
-                    value[key] = float(child) * scale
+                if key in {"ip", "op", "st", "t", "tm", "dr"} and isinstance(
+                    child, (int, float)
+                ):
+                    value[key] = scaled_frame(child)
                 else:
                     scale_frames(child)
         elif isinstance(value, list):
@@ -254,6 +273,71 @@ def _collect_walk(value: Any, colors: list[list[float]]) -> None:
             _collect_walk(child, colors)
 
 
+def _slot_references(value: Any) -> tuple[set[str], dict[str, int]]:
+    color_slots: set[str] = set()
+    gradient_slots: dict[str, int] = {}
+
+    def walk(child: Any) -> None:
+        if isinstance(child, dict):
+            color = child.get("c")
+            if isinstance(color, dict) and isinstance(color.get("sid"), str):
+                color_slots.add(color["sid"])
+            gradient = child.get("g")
+            if isinstance(gradient, dict):
+                points = gradient.get("p")
+                prop = gradient.get("k")
+                if (
+                    isinstance(points, int)
+                    and points > 0
+                    and isinstance(prop, dict)
+                    and isinstance(prop.get("sid"), str)
+                ):
+                    gradient_slots[prop["sid"]] = points
+            for nested in child.values():
+                walk(nested)
+        elif isinstance(child, list):
+            for nested in child:
+                walk(nested)
+
+    walk(value)
+    return color_slots, gradient_slots
+
+
+def _slot_property(document: dict[str, Any], slot_id: str) -> dict[str, Any] | None:
+    slots = document.get("slots")
+    if not isinstance(slots, dict):
+        return None
+    slot = slots.get(slot_id)
+    if not isinstance(slot, dict):
+        return None
+    prop = slot.get("p")
+    return prop if isinstance(prop, dict) else None
+
+
+def _collect_slot_colors(document: dict[str, Any], colors: list[list[float]]) -> None:
+    color_slots, gradient_slots = _slot_references(document)
+    for slot_id in color_slots:
+        prop = _slot_property(document, slot_id)
+        if prop is not None:
+            _collect_property(prop, colors)
+    for slot_id, points in gradient_slots.items():
+        prop = _slot_property(document, slot_id)
+        if prop is not None:
+            _collect_gradient({"p": points, "k": prop}, colors)
+
+
+def _recolor_slots(document: dict[str, Any], target: ParsedColor, midpoint: float) -> None:
+    color_slots, gradient_slots = _slot_references(document)
+    for slot_id in color_slots:
+        prop = _slot_property(document, slot_id)
+        if prop is not None:
+            _recolor_property(prop, target, midpoint)
+    for slot_id, points in gradient_slots.items():
+        prop = _slot_property(document, slot_id)
+        if prop is not None:
+            _recolor_gradient({"p": points, "k": prop}, target, midpoint)
+
+
 def _walk(value: Any, target: ParsedColor, midpoint: float) -> None:
     if isinstance(value, dict):
         color = value.get("c")
@@ -341,12 +425,25 @@ def _transform_walk(value: Any, transform: Any) -> None:
             _transform_walk(child, transform)
 
 
+def _transform_slots(document: dict[str, Any], transform: Any) -> None:
+    color_slots, gradient_slots = _slot_references(document)
+    for slot_id in color_slots:
+        prop = _slot_property(document, slot_id)
+        if prop is not None:
+            _transform_property(prop, transform)
+    for slot_id, points in gradient_slots.items():
+        prop = _slot_property(document, slot_id)
+        if prop is not None:
+            _transform_gradient({"p": points, "k": prop}, transform)
+
+
 def strong_tint_tgs_document(
     document: dict[str, Any], target: ParsedColor
 ) -> dict[str, Any]:
     output = copy.deepcopy(document)
     colors: list[list[float]] = []
     _collect_walk(output, colors)
+    _collect_slot_colors(output, colors)
     midpoint = palette_lightness_midpoint(colors)
 
     def transform(color: list[float]) -> list[float]:
@@ -359,6 +456,7 @@ def strong_tint_tgs_document(
         )
 
     _transform_walk(output, transform)
+    _transform_slots(output, transform)
     return output
 
 
@@ -377,6 +475,132 @@ def _adaptive_density(
     distance = float(np.clip((current - midpoint) / max(high - midpoint, 0.04), 0.0, 1.0))
     smooth = distance * distance * (3.0 - 2.0 * distance)
     return 0.06 + 0.76 * (1.0 - smooth)
+
+
+def _adaptive_gradient_array(
+    values: list[Any], points: int, low: float, midpoint: float, high: float
+) -> list[Any]:
+    """Turn a Lottie gradient into a white mask with per-stop opacity.
+
+    Gradient colors do not have sibling opacity properties like regular fills
+    and strokes. Lottie stores optional opacity stops after the color stops in
+    the same array, so preserving contour depth requires writing the source
+    lightness into that opacity tail.
+    """
+
+    color_length = points * 4
+    if len(values) < color_length:
+        return list(values)
+    color_values = list(values[:color_length])
+    opacity_values = values[color_length:]
+    opacity_stops: list[tuple[float, float]] = []
+    if len(opacity_values) % 2 == 0:
+        for start in range(0, len(opacity_values), 2):
+            position, opacity = opacity_values[start : start + 2]
+            if isinstance(position, (int, float)) and isinstance(
+                opacity, (int, float)
+            ):
+                opacity_stops.append(
+                    (
+                        float(position),
+                        float(np.clip(float(opacity), 0.0, 1.0)),
+                    )
+                )
+    opacity_stops.sort(key=lambda stop: stop[0])
+
+    def source_opacity(position: float) -> float:
+        if not opacity_stops:
+            return 1.0
+        positions = [stop[0] for stop in opacity_stops]
+        opacities = [stop[1] for stop in opacity_stops]
+        return float(np.interp(position, positions, opacities))
+
+    mask_opacity: list[float] = []
+    for start in range(0, color_length, 4):
+        position = color_values[start]
+        channels = color_values[start + 1 : start + 4]
+        if not isinstance(position, (int, float)) or not _is_color(channels):
+            return list(values)
+        numeric_color = [float(channel) for channel in channels]
+        color_values[start + 1 : start + 4] = [1.0, 1.0, 1.0]
+        mask_opacity.extend(
+            [
+                float(position),
+                source_opacity(float(position))
+                * _adaptive_density(numeric_color, low, midpoint, high),
+            ]
+        )
+    return [*color_values, *mask_opacity]
+
+
+def _adaptive_gradient_payload(
+    value: Any,
+    points: int,
+    low: float,
+    midpoint: float,
+    high: float,
+) -> Any:
+    if isinstance(value, list) and value and all(
+        isinstance(item, (int, float)) for item in value
+    ):
+        return _adaptive_gradient_array(value, points, low, midpoint, high)
+    if isinstance(value, list):
+        return [
+            _adaptive_gradient_payload(item, points, low, midpoint, high)
+            for item in value
+        ]
+    return value
+
+
+def _adaptive_gradient(
+    gradient: dict[str, Any], low: float, midpoint: float, high: float
+) -> None:
+    points = gradient.get("p")
+    prop = gradient.get("k")
+    if not isinstance(points, int) or points <= 0 or not isinstance(prop, dict):
+        return
+    keyframes = prop.get("k")
+    if isinstance(keyframes, list) and keyframes and all(
+        isinstance(item, (int, float)) for item in keyframes
+    ):
+        prop["k"] = _adaptive_gradient_array(
+            keyframes, points, low, midpoint, high
+        )
+    elif isinstance(keyframes, list):
+        for frame in keyframes:
+            if not isinstance(frame, dict):
+                continue
+            for name in ("s", "e"):
+                if name in frame:
+                    frame[name] = _adaptive_gradient_payload(
+                        frame[name], points, low, midpoint, high
+                    )
+
+
+def _apply_adaptive_gradients(
+    value: Any, low: float, midpoint: float, high: float
+) -> None:
+    if isinstance(value, dict):
+        gradient = value.get("g")
+        if isinstance(gradient, dict):
+            _adaptive_gradient(gradient, low, midpoint, high)
+        for child in value.values():
+            _apply_adaptive_gradients(child, low, midpoint, high)
+    elif isinstance(value, list):
+        for child in value:
+            _apply_adaptive_gradients(child, low, midpoint, high)
+
+
+def _apply_adaptive_slot_gradients(
+    document: dict[str, Any], low: float, midpoint: float, high: float
+) -> None:
+    _, gradient_slots = _slot_references(document)
+    for slot_id, points in gradient_slots.items():
+        prop = _slot_property(document, slot_id)
+        if prop is not None:
+            _adaptive_gradient(
+                {"p": points, "k": prop}, low, midpoint, high
+            )
 
 
 def _scale_opacity_payload(value: Any, factor: float) -> Any:
@@ -509,6 +733,7 @@ def adaptive_tgs_document(document: dict[str, Any]) -> dict[str, Any]:
     output = copy.deepcopy(document)
     colors: list[list[float]] = []
     _collect_walk(output, colors)
+    _collect_slot_colors(output, colors)
     if not colors:
         return output
     lightness = srgb_to_oklab(np.asarray(colors, dtype=np.float64))[..., 0]
@@ -516,6 +741,8 @@ def adaptive_tgs_document(document: dict[str, Any]) -> dict[str, Any]:
         float(value) for value in np.quantile(lightness, (0.01, 0.50, 0.99))
     )
     _apply_adaptive_shape_opacity(output, low, midpoint, high)
+    _apply_adaptive_gradients(output, low, midpoint, high)
+    _apply_adaptive_slot_gradients(output, low, midpoint, high)
 
     def transform(color: list[float]) -> list[float]:
         # Preserve the original channel count. Adding a synthetic fourth color
@@ -525,6 +752,7 @@ def adaptive_tgs_document(document: dict[str, Any]) -> dict[str, Any]:
         return [1.0, 1.0, 1.0, *list(color[3:])]
 
     _transform_walk(output, transform)
+    _transform_slots(output, transform)
     return output
 
 
@@ -532,8 +760,10 @@ def recolor_tgs_document(document: dict[str, Any], target: ParsedColor) -> dict[
     output = copy.deepcopy(document)
     colors: list[list[float]] = []
     _collect_walk(output, colors)
+    _collect_slot_colors(output, colors)
     midpoint = palette_lightness_midpoint(colors)
     _walk(output, target, midpoint)
+    _recolor_slots(output, target, midpoint)
     return output
 
 

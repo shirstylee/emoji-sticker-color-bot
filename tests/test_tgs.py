@@ -128,6 +128,33 @@ def test_nonstandard_tgs_timing_is_normalized_to_telegram_requirements() -> None
     assert output["layers"][0]["shapes"][1]["c"]["k"][0]["t"] == 90  # type: ignore[index]
 
 
+def test_telegram_tgs_timing_values_are_not_rewritten_as_floats() -> None:
+    source = sample_document()
+    source["tgs"] = 1
+
+    output = normalize_tgs_timing(source)
+
+    assert output == source
+    assert isinstance(output["ip"], int)
+    assert isinstance(output["op"], int)
+    assert isinstance(output["layers"][0]["shapes"][1]["c"]["k"][0]["t"], int)  # type: ignore[index]
+
+
+def test_tgs_recolors_color_slots_used_by_modern_lottie_documents() -> None:
+    source = sample_document()
+    source["slots"] = {
+        "brand_color": {"p": {"a": 0, "k": [1.0, 0.0, 0.0, 1.0]}}
+    }
+    source["layers"][0]["shapes"][0]["c"] = {"sid": "brand_color"}  # type: ignore[index]
+
+    output = recolor_tgs_document(source, parse_color("#2196F3"))
+    slot_color = output["slots"]["brand_color"]["p"]["k"]  # type: ignore[index]
+
+    assert slot_color != [1.0, 0.0, 0.0, 1.0]
+    assert slot_color[2] > slot_color[0]
+    assert output["layers"][0]["shapes"][0]["c"] == {"sid": "brand_color"}  # type: ignore[index]
+
+
 def test_tgs_adaptive_mask_and_strong_tint_preserve_alpha() -> None:
     source = sample_document()
     adaptive = adaptive_tgs_document(source)
@@ -162,3 +189,23 @@ def test_tgs_adaptive_preserves_three_channel_color_shape(tmp_path: Path) -> Non
 
     destination = save_tgs(adaptive, tmp_path / "adaptive.tgs")
     assert load_tgs(destination)["layers"][0]["shapes"][0]["c"]["k"] == color  # type: ignore[index]
+
+
+def test_tgs_adaptive_gradient_keeps_contours_in_opacity_stops() -> None:
+    adaptive = adaptive_tgs_document(sample_document())
+    gradient = adaptive["layers"][0]["shapes"][2]["g"]["k"]["k"]  # type: ignore[index]
+
+    assert gradient[:8] == [
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+    ]
+    assert gradient[8] == 0.0
+    assert gradient[10] == 1.0
+    assert gradient[9] < gradient[11]
+    assert all(0.0 <= value <= 1.0 for value in (gradient[9], gradient[11]))
