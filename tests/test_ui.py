@@ -18,6 +18,7 @@ from app.keyboards.user import (
     language_keyboard,
     main_menu_keyboard,
     processing_keyboard,
+    result_keyboard,
     single_result_keyboard,
 )
 from app.main import (
@@ -153,8 +154,14 @@ def test_single_result_and_information_actions(
         "job:job:single_pack",
         "job:job:download",
         "job:job:restart",
+        "job:job:home",
     ]
     assert result.inline_keyboard[0][0].style == "primary"
+    assert result.inline_keyboard[-1][0].text == "Главное меню"
+
+    completed = result_keyboard(registry, add_url="https://t.me/addemoji/example", language="ru")
+    assert completed.inline_keyboard[-1][0].text == "Главное меню"
+    assert completed.inline_keyboard[-1][0].callback_data == "menu:home"
 
     information = information_keyboard(registry, "ru")
     assert str(information.inline_keyboard[0][0].url) == "https://t.me/jawface"

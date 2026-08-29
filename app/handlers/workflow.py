@@ -1030,7 +1030,7 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
         if cancelled and cancelled.created_sets:
             await context.publisher.delete_sets(cancelled.created_sets)
         return
-    if action == "restart":
+    if action in {"restart", "home"}:
         await _delete_old_preview(job, context)
         await context.jobs.finish(job.job_id, JobStatus.COMPLETED)
         await show_main_menu(control, context, job.language)

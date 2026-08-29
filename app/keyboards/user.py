@@ -31,6 +31,7 @@ BUTTON_LABELS = {
         "open_stickers": "Открыть @Stickers",
         "back": "Назад",
         "support": "Техническая поддержка",
+        "home": "Главное меню",
     },
     "en": {
         "picker": "Pick a color",
@@ -54,6 +55,7 @@ BUTTON_LABELS = {
         "open_stickers": "Open @Stickers",
         "back": "Back",
         "support": "Technical support",
+        "home": "Main menu",
     },
 }
 
@@ -303,6 +305,9 @@ def result_keyboard(
     if add_url:
         rows.append([_button(registry, "ADD", _label(language, "add_pack"), url=add_url)])
     rows.append([_button(registry, "BRUSH", _label(language, "restart"), callback_data="restart")])
+    rows.append(
+        [_button(registry, "HOME", _label(language, "home"), callback_data="menu:home")]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -334,6 +339,14 @@ def single_result_keyboard(
                     "BRUSH",
                     _label(language, "restart"),
                     callback_data=f"job:{job_id}:restart",
+                )
+            ],
+            [
+                _button(
+                    registry,
+                    "HOME",
+                    _label(language, "home"),
+                    callback_data=f"job:{job_id}:home",
                 )
             ],
         ]
