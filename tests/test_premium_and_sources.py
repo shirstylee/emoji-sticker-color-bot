@@ -12,13 +12,14 @@ from app.validators.common import sanitize_filename
 
 def test_real_premium_registry_is_loaded_from_main_txt() -> None:
     registry = PremiumEmojiRegistry.load(Path("Main.txt"))
-    assert registry.loaded_entries == 707
+    assert registry.loaded_entries == 708
     assert registry.invalid_entries == 0
     assert registry.mappings_available >= 30
     for semantic in ("SUCCESS", "ERROR", "COLOR", "CANCEL", "PACK", "ADMIN", "ZIP"):
         emoji_id = registry.button_id(semantic)
         assert emoji_id is not None and emoji_id.isdecimal()
     assert registry.icon("COLOR").custom_emoji_id == "5769635757211784031"
+    assert registry.icon("LOADING").custom_emoji_id == "5258281774198311547"
     assert registry.button_id("FLAG_RU") == "5449408995691341691"
     assert registry.button_id("FLAG_EN") == "5202021044105257611"
 
