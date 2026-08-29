@@ -170,12 +170,12 @@ def adaptive_alpha(
     rgb: NDArray[np.uint8] | FloatArray,
     alpha: NDArray[np.uint8] | FloatArray,
 ) -> NDArray[np.uint8]:
-    """Encode foreground contrast as alpha for Telegram repaintable emoji.
+    """Encode source shading as a stable opacity mask for Adaptive emoji.
 
-    Telegram replaces the visible color of ``needs_repainting`` emoji, so RGB
-    differences alone disappear. Keeping the dominant tone opaque and turning
-    lighter and darker details into negative-space opacity preserves symbols,
-    outlines and highlights after Telegram applies its theme color.
+    Telegram replaces all visible RGB with a theme-dependent color. Dark
+    source outlines therefore need *more* opacity than the body, while light
+    highlights need less. A symmetric distance-from-median mask erased both
+    and was especially destructive to cartoon emoji contours.
     """
 
     source = np.asarray(rgb, dtype=np.float64)
@@ -189,23 +189,27 @@ def adaptive_alpha(
     samples = lightness[visible]
     if samples.size == 0:
         return np.zeros(source_alpha.shape, dtype=np.uint8)
-    low, midpoint, high = np.quantile(samples, (0.02, 0.50, 0.98))
+    low, midpoint, high = np.quantile(samples, (0.01, 0.50, 0.99))
     if high - low < 0.06:
         return np.asarray(
             np.rint(np.clip(source_alpha, 0.0, 1.0) * 255.0), dtype=np.uint8
         )
-    lower = np.maximum(midpoint - low, 0.04)
-    upper = np.maximum(high - midpoint, 0.04)
-    distance = np.where(
+    lower = max(float(midpoint - low), 0.04)
+    upper = max(float(high - midpoint), 0.04)
+    darker = np.clip((midpoint - lightness) / lower, 0.0, 1.0)
+    lighter = np.clip((lightness - midpoint) / upper, 0.0, 1.0)
+    darker = darker * darker * (3.0 - 2.0 * darker)
+    lighter = lighter * lighter * (3.0 - 2.0 * lighter)
+
+    # The main fill remains strong, dark ink/contours become fully opaque and
+    # highlights retain a faint antialiased trace instead of a jagged cut-out.
+    body_opacity = 0.82
+    highlight_floor = 0.06
+    mask = np.where(
         lightness <= midpoint,
-        (midpoint - lightness) / lower,
-        (lightness - midpoint) / upper,
+        body_opacity + (1.0 - body_opacity) * darker,
+        highlight_floor + (body_opacity - highlight_floor) * (1.0 - lighter),
     )
-    distance = np.clip(distance, 0.0, 1.0)
-    # A small plateau keeps the dominant body solid; details then become
-    # progressively transparent and remain visible against any chat theme.
-    detail = np.clip((distance - 0.08) / 0.92, 0.0, 1.0)
-    mask = 1.0 - detail * detail * (3.0 - 2.0 * detail)
     output = np.clip(source_alpha * mask, 0.0, 1.0)
     return np.asarray(np.rint(output * 255.0), dtype=np.uint8)
 

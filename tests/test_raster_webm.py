@@ -47,9 +47,27 @@ def test_adaptive_mask_preserves_symbol_as_negative_space() -> None:
     result = np.asarray(
         recolor_image(Image.fromarray(pixels, "RGBA"), parse_color("#000000"), adaptive=True)
     )
-    assert int(result[2, 2, 3]) >= 250
-    assert int(result[10, 10, 3]) <= 5
+    assert 190 <= int(result[2, 2, 3]) <= 230
+    assert int(result[10, 10, 3]) <= 20
     assert np.all(result[..., :3] == 255)
+
+
+def test_adaptive_mask_keeps_dark_contours_denser_than_body() -> None:
+    pixels = np.zeros((30, 30, 4), dtype=np.uint8)
+    pixels[4:26, 4:26] = [35, 25, 20, 255]
+    pixels[6:24, 6:24] = [240, 145, 25, 255]
+    pixels[11:19, 13:17] = [255, 255, 255, 255]
+
+    result = np.asarray(
+        recolor_image(Image.fromarray(pixels, "RGBA"), parse_color("#000000"), adaptive=True)
+    )
+
+    contour = int(result[5, 15, 3])
+    body = int(result[8, 15, 3])
+    highlight = int(result[15, 15, 3])
+    assert contour > body > highlight
+    assert contour >= 245
+    assert body >= 190
 
 
 def test_existing_adaptive_emoji_gets_strong_tint_without_flattening() -> None:
@@ -142,8 +160,8 @@ async def test_adaptive_pipeline_ignores_opaque_telegram_thumbnail(
     with Image.open(result) as preview:
         alpha = np.asarray(preview.convert("RGBA"))[..., 3]
         assert int(alpha[0, 0]) == 0
-        assert int(alpha[50, 25]) > 240
-        assert int(alpha[50, 50]) < 20
+        assert int(alpha[50, 25]) > 190
+        assert int(alpha[50, 50]) < 30
 
 
 @pytest.mark.asyncio
@@ -200,7 +218,10 @@ async def test_streaming_webm_pipeline(tmp_path: Path) -> None:
         "-f",
         "lavfi",
         "-i",
-        "color=c=red:s=64x32:d=0.25:r=10",
+        (
+            "color=c=black@0.0:s=64x32:d=0.25:r=10,format=rgba,"
+            "drawbox=x=16:y=8:w=32:h=16:color=red@1.0:t=fill:replace=1"
+        ),
         "-an",
         "-c:v",
         "libvpx-vp9",
@@ -227,3 +248,28 @@ async def test_streaming_webm_pipeline(tmp_path: Path) -> None:
     assert output.width <= 100 and output.height <= 100
     assert output.fps <= 30
     assert destination.stat().st_size > 0
+
+    decoded = tmp_path / "output.rgba"
+    process = await asyncio.create_subprocess_exec(
+        ffmpeg,
+        "-v",
+        "error",
+        "-c:v",
+        "libvpx-vp9",
+        "-i",
+        str(destination),
+        "-frames:v",
+        "1",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgba",
+        "-y",
+        str(decoded),
+    )
+    assert await process.wait() == 0
+    alpha = np.frombuffer(decoded.read_bytes(), dtype=np.uint8).reshape(
+        output.height, output.width, 4
+    )[..., 3]
+    assert int(alpha[50, 10]) < 10
+    assert int(alpha[50, 50]) > 240

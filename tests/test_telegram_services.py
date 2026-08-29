@@ -205,6 +205,50 @@ async def test_wrong_file_type_uploads_before_retrying_pack_creation(
 
 
 @pytest.mark.asyncio
+async def test_tgs_pack_retries_with_uploaded_file_id_only_after_native_failure(
+    tmp_path: Path,
+) -> None:
+    class FakeBot:
+        def __init__(self) -> None:
+            self.create_calls: list[dict[str, object]] = []
+            self.uploads = 0
+
+        async def create_new_sticker_set(self, **kwargs: object) -> bool:
+            self.create_calls.append(kwargs)
+            if len(self.create_calls) == 1:
+                raise TelegramBadRequest(
+                    SendSticker(chat_id=1, sticker="invalid"),
+                    "Bad Request: wrong file type",
+                )
+            return True
+
+        async def upload_sticker_file(self, **_: object) -> object:
+            self.uploads += 1
+            return SimpleNamespace(file_id="uploaded-tgs-id")
+
+    path = tmp_path / "one.tgs"
+    path.write_bytes(b"payload")
+    bot = FakeBot()
+    publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
+
+    await publisher.publish_set(
+        user_id=1,
+        title="Animated Pack",
+        bot_username="ColorBot",
+        files=[(path, MediaFormat.TGS, ("🎨",))],
+        custom_emoji=True,
+        needs_repainting=False,
+        cancel_event=asyncio.Event(),
+    )
+
+    first = bot.create_calls[0]["stickers"]
+    second = bot.create_calls[1]["stickers"]
+    assert isinstance(first[0].sticker, FSInputFile)  # type: ignore[index]
+    assert second[0].sticker == "uploaded-tgs-id"  # type: ignore[index]
+    assert bot.uploads == 1
+
+
+@pytest.mark.asyncio
 async def test_sticker_send_uses_multipart_asset_without_pack_upload(tmp_path: Path) -> None:
     class FakeBot:
         def __init__(self) -> None:
@@ -235,7 +279,7 @@ async def test_sticker_send_uses_multipart_asset_without_pack_upload(tmp_path: P
 
 
 @pytest.mark.asyncio
-async def test_tgs_cannot_use_pack_upload_file_id_for_chat_delivery(tmp_path: Path) -> None:
+async def test_tgs_is_sent_as_a_native_multipart_sticker(tmp_path: Path) -> None:
     class FakeBot:
         def __init__(self) -> None:
             self.events: list[tuple[str, object]] = []
@@ -253,25 +297,26 @@ async def test_tgs_cannot_use_pack_upload_file_id_for_chat_delivery(tmp_path: Pa
     bot = FakeBot()
     publisher = StickerPublisher(bot, TelegramStickerRateController())  # type: ignore[arg-type]
 
-    with pytest.raises(ValueError, match="render it to WEBM"):
-        await publisher.send_sticker_file(
-            chat_id=1,
-            path=path,
-            media_format=MediaFormat.TGS,
-            cancel_event=asyncio.Event(),
-        )
+    await publisher.send_sticker_file(
+        chat_id=1,
+        path=path,
+        media_format=MediaFormat.TGS,
+        cancel_event=asyncio.Event(),
+    )
 
-    assert bot.events == []
+    assert len(bot.events) == 1
+    assert bot.events[0][0] == "send"
+    assert isinstance(bot.events[0][1], FSInputFile)
 
 
 @pytest.mark.asyncio
-async def test_tgs_is_uploaded_before_pack_creation(tmp_path: Path) -> None:
+async def test_tgs_pack_creation_uses_native_multipart_upload(tmp_path: Path) -> None:
     class FakeBot:
         def __init__(self) -> None:
             self.created_sticker: object | None = None
 
         async def upload_sticker_file(self, **_: object) -> object:
-            return SimpleNamespace(file_id="uploaded-tgs-id")
+            raise AssertionError("native TGS should be attempted before pre-upload fallback")
 
         async def create_new_sticker_set(self, **kwargs: object) -> bool:
             self.created_sticker = kwargs["stickers"][0].sticker  # type: ignore[index]
@@ -292,7 +337,7 @@ async def test_tgs_is_uploaded_before_pack_creation(tmp_path: Path) -> None:
         cancel_event=asyncio.Event(),
     )
 
-    assert bot.created_sticker == "uploaded-tgs-id"
+    assert isinstance(bot.created_sticker, FSInputFile)
 
 
 @pytest.mark.asyncio

@@ -120,10 +120,12 @@ async def recolor_webm_file(
     height = max(2, round(info.height * ratio / 2) * 2)
     frame_size = width * height * 4
     ffmpeg = str(ffmpeg_executable())
-    decoder = await asyncio.create_subprocess_exec(
-        ffmpeg,
-        "-v",
-        "error",
+    decoder_arguments = [ffmpeg, "-v", "error"]
+    if info.codec == "vp9":
+        # FFmpeg's native VP9 decoder discards WebM BlockAdditional alpha on
+        # several builds. libvpx-vp9 reconstructs the actual RGBA frames.
+        decoder_arguments.extend(("-c:v", "libvpx-vp9"))
+    decoder_arguments.extend((
         "-i",
         str(source),
         "-an",
@@ -134,6 +136,9 @@ async def recolor_webm_file(
         "-pix_fmt",
         "rgba",
         "pipe:1",
+    ))
+    decoder = await asyncio.create_subprocess_exec(
+        *decoder_arguments,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )

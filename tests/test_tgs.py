@@ -136,7 +136,11 @@ def test_tgs_adaptive_mask_and_strong_tint_preserve_alpha() -> None:
     keyframe = shapes[1]["c"]["k"][0]
     assert keyframe["s"][:3] == [1.0, 1.0, 1.0]
     assert keyframe["e"][:3] == [1.0, 1.0, 1.0]
-    assert min(keyframe["s"][3], keyframe["e"][3]) < 1.0
+    assert keyframe["s"][3] == keyframe["e"][3] == 1.0
+    assert shapes[0]["o"]["k"] < 100
+    assert shapes[1]["o"]["a"] == 1
+    opacity_keyframe = shapes[1]["o"]["k"][0]
+    assert opacity_keyframe["s"][0] < opacity_keyframe["e"][0]
 
     strong = strong_tint_tgs_document(source, parse_color("#FF0000"))
     strong_shapes = strong["layers"][0]["shapes"]  # type: ignore[index]
@@ -146,3 +150,15 @@ def test_tgs_adaptive_mask_and_strong_tint_preserve_alpha() -> None:
     assert static[3] == 1.0
     assert animated["s"][:3] != animated["e"][:3]
     assert animated["s"][3] == animated["e"][3] == 1.0
+
+
+def test_tgs_adaptive_preserves_three_channel_color_shape(tmp_path: Path) -> None:
+    source = sample_document()
+    source["layers"][0]["shapes"][0]["c"]["k"] = [0.2, 0.4, 0.8]  # type: ignore[index]
+
+    adaptive = adaptive_tgs_document(source)
+    color = adaptive["layers"][0]["shapes"][0]["c"]["k"]  # type: ignore[index]
+    assert color == [1.0, 1.0, 1.0]
+
+    destination = save_tgs(adaptive, tmp_path / "adaptive.tgs")
+    assert load_tgs(destination)["layers"][0]["shapes"][0]["c"]["k"] == color  # type: ignore[index]

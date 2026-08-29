@@ -6,7 +6,7 @@ import copy
 import gzip
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -362,6 +362,149 @@ def strong_tint_tgs_document(
     return output
 
 
+def _adaptive_density(
+    color: list[float], low: float, midpoint: float, high: float
+) -> float:
+    if high - low < 0.06:
+        return 1.0
+    current = float(
+        srgb_to_oklab(np.asarray(color[:3], dtype=np.float64).reshape(1, 3))[0, 0]
+    )
+    if current <= midpoint:
+        distance = float(np.clip((midpoint - current) / max(midpoint - low, 0.04), 0.0, 1.0))
+        smooth = distance * distance * (3.0 - 2.0 * distance)
+        return 0.82 + 0.18 * smooth
+    distance = float(np.clip((current - midpoint) / max(high - midpoint, 0.04), 0.0, 1.0))
+    smooth = distance * distance * (3.0 - 2.0 * distance)
+    return 0.06 + 0.76 * (1.0 - smooth)
+
+
+def _scale_opacity_payload(value: Any, factor: float) -> Any:
+    if isinstance(value, (int, float)):
+        return float(np.clip(float(value) * factor, 0.0, 100.0))
+    if isinstance(value, list):
+        return [_scale_opacity_payload(item, factor) for item in value]
+    return value
+
+
+def _scale_opacity_property(prop: dict[str, Any], factor: float) -> None:
+    keyframes = prop.get("k")
+    if isinstance(keyframes, (int, float)):
+        prop["k"] = _scale_opacity_payload(keyframes, factor)
+    elif isinstance(keyframes, list):
+        for frame in keyframes:
+            if not isinstance(frame, dict):
+                continue
+            for name in ("s", "e"):
+                if name in frame:
+                    frame[name] = _scale_opacity_payload(frame[name], factor)
+
+
+def _first_color(value: Any) -> list[float] | None:
+    if _is_color(value):
+        return [float(channel) for channel in value]
+    if isinstance(value, list):
+        for item in value:
+            color = _first_color(item)
+            if color is not None:
+                return color
+    return None
+
+
+def _animated_adaptive_opacity(
+    color_prop: dict[str, Any],
+    *,
+    base_opacity: float,
+    low: float,
+    midpoint: float,
+    high: float,
+) -> dict[str, Any] | None:
+    keyframes = color_prop.get("k")
+    if not isinstance(keyframes, list) or _is_color(keyframes):
+        return None
+    output: list[dict[str, Any]] = []
+    found_color = False
+    for frame in keyframes:
+        if not isinstance(frame, dict):
+            continue
+        opacity_frame = {
+            name: copy.deepcopy(frame[name])
+            for name in ("t", "h")
+            if name in frame
+        }
+        for name in ("i", "o"):
+            easing = frame.get(name)
+            if not isinstance(easing, dict):
+                continue
+            scalar_easing: dict[str, list[float]] = {}
+            for axis in ("x", "y"):
+                values = easing.get(axis)
+                if isinstance(values, (int, float)):
+                    scalar_easing[axis] = [float(values)]
+                elif isinstance(values, list) and values and isinstance(
+                    values[0], (int, float)
+                ):
+                    scalar_easing[axis] = [float(values[0])]
+            if scalar_easing:
+                opacity_frame[name] = scalar_easing
+        for name in ("s", "e"):
+            color = _first_color(frame.get(name))
+            if color is None:
+                continue
+            found_color = True
+            opacity_frame[name] = [
+                100.0
+                * base_opacity
+                * _adaptive_density(color, low, midpoint, high)
+            ]
+        output.append(opacity_frame)
+    if not found_color or not output:
+        return None
+    return {"a": 1, "k": output}
+
+
+def _apply_adaptive_shape_opacity(
+    value: Any, low: float, midpoint: float, high: float
+) -> None:
+    if isinstance(value, dict):
+        if value.get("ty") in {"fl", "st"}:
+            color_prop = value.get("c")
+            opacity_prop = value.get("o")
+            if isinstance(color_prop, dict):
+                static_color = color_prop.get("k")
+                if _is_color(static_color):
+                    factor = _adaptive_density(
+                        cast(list[float], static_color), low, midpoint, high
+                    )
+                    if isinstance(opacity_prop, dict):
+                        _scale_opacity_property(opacity_prop, factor)
+                    else:
+                        value["o"] = {"a": 0, "k": 100.0 * factor}
+                elif not isinstance(opacity_prop, dict) or isinstance(
+                    opacity_prop.get("k"), (int, float)
+                ):
+                    base = (
+                        float(opacity_prop["k"]) / 100.0
+                        if isinstance(opacity_prop, dict)
+                        and isinstance(opacity_prop.get("k"), (int, float))
+                        else 1.0
+                    )
+                    animated = _animated_adaptive_opacity(
+                        color_prop,
+                        base_opacity=base,
+                        low=low,
+                        midpoint=midpoint,
+                        high=high,
+                    )
+                    if animated is not None:
+                        value["o"] = animated
+        for child in value.values():
+            _apply_adaptive_shape_opacity(child, low, midpoint, high)
+    elif isinstance(value, list):
+        for child in value:
+            _apply_adaptive_shape_opacity(child, low, midpoint, high)
+
+
 def adaptive_tgs_document(document: dict[str, Any]) -> dict[str, Any]:
     output = copy.deepcopy(document)
     colors: list[list[float]] = []
@@ -369,24 +512,17 @@ def adaptive_tgs_document(document: dict[str, Any]) -> dict[str, Any]:
     if not colors:
         return output
     lightness = srgb_to_oklab(np.asarray(colors, dtype=np.float64))[..., 0]
-    low, midpoint, high = np.quantile(lightness, (0.02, 0.50, 0.98))
-    spread = float(high - low)
+    low, midpoint, high = (
+        float(value) for value in np.quantile(lightness, (0.01, 0.50, 0.99))
+    )
+    _apply_adaptive_shape_opacity(output, low, midpoint, high)
 
     def transform(color: list[float]) -> list[float]:
-        alpha = float(color[3]) if len(color) > 3 else 1.0
-        if spread >= 0.06:
-            current = float(
-                srgb_to_oklab(np.asarray(color[:3], dtype=np.float64).reshape(1, 3))[0, 0]
-            )
-            denominator = (
-                max(float(midpoint - low), 0.04)
-                if current <= midpoint
-                else max(float(high - midpoint), 0.04)
-            )
-            distance = abs(current - float(midpoint)) / denominator
-            detail = float(np.clip((distance - 0.08) / 0.92, 0.0, 1.0))
-            alpha *= 1.0 - detail * detail * (3.0 - 2.0 * detail)
-        return [1.0, 1.0, 1.0, float(np.clip(alpha, 0.0, 1.0))]
+        # Preserve the original channel count. Adding a synthetic fourth color
+        # channel makes some otherwise valid Telegram TGS documents fail format
+        # validation; Lottie fill/stroke opacity lives in the sibling ``o``
+        # property and is adjusted above.
+        return [1.0, 1.0, 1.0, *list(color[3:])]
 
     _transform_walk(output, transform)
     return output
