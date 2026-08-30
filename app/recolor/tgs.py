@@ -420,7 +420,7 @@ def _transform_walk(
         gradient = value.get("g")
         if isinstance(gradient, dict):
             gradient_transform = (
-                radial_gradient_transform(gradient)
+                radial_gradient_transform
                 if value.get("t") == 2 and radial_gradient_transform is not None
                 else transform
             )
@@ -479,13 +479,12 @@ def _transform_slots(
     for slot_id, points in gradient_slots.items():
         prop = _slot_property(document, slot_id)
         if prop is not None:
-            gradient = {"p": points, "k": prop}
             gradient_transform = (
-                radial_gradient_transform(gradient)
+                radial_gradient_transform
                 if slot_id in radial_slots and radial_gradient_transform is not None
                 else transform
             )
-            _transform_gradient(gradient, gradient_transform)
+            _transform_gradient({"p": points, "k": prop}, gradient_transform)
 
 
 def strong_tint_tgs_document(
@@ -828,35 +827,20 @@ def recolor_tgs_document(
                 strength=strength,
             )
 
-        def radial_transform(gradient: dict[str, Any]) -> Any:
-            # A document-wide midpoint flattens small radial gradients. Use the
-            # gradient's own palette so its dark body stays deep while its top
-            # stop remains a visible specular highlight.
-            gradient_colors: list[list[float]] = []
-            _collect_gradient(gradient, gradient_colors)
-            local_midpoint = (
-                palette_lightness_midpoint(gradient_colors)
-                if gradient_colors
-                else midpoint
-            )
-            radial_midpoint = float(
-                np.clip(
-                    local_midpoint + max(0.0, strength - 1.0) * 0.20,
-                    0.08,
-                    0.92,
-                )
-            )
+        # Radial highlights otherwise inherit the document-wide midpoint and
+        # become flat bright discs. A small vivid-only bias keeps spheres and
+        # knobs deep without changing solid or linear-gradient artwork.
+        radial_midpoint = float(
+            np.clip(midpoint + max(0.0, strength - 1.0) * 0.48, 0.08, 0.92)
+        )
 
-            def transform_color(color: list[float]) -> list[float]:
-                return recolor_normalized_color(
-                    color,
-                    target,
-                    source_midpoint=radial_midpoint,
-                    contrast_scale=1.15,
-                    strength=strength,
-                )
-
-            return transform_color
+        def radial_transform(color: list[float]) -> list[float]:
+            return recolor_normalized_color(
+                color,
+                target,
+                source_midpoint=radial_midpoint,
+                strength=strength,
+            )
 
         _transform_walk(
             output,
