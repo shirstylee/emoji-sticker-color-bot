@@ -182,7 +182,7 @@ def test_single_result_and_information_actions(
     assert completed.inline_keyboard[-1][0].callback_data == "menu:home"
 
     information = information_keyboard(registry, "ru")
-    assert str(information.inline_keyboard[0][0].url) == "https://t.me/jawface"
+    assert str(information.inline_keyboard[0][0].url) == "https://t.me/ragedick"
     assert information.inline_keyboard[0][0].style == "primary"
     assert information.inline_keyboard[1][0].callback_data == "menu:home"
 

@@ -171,7 +171,7 @@ def information_keyboard(
                     registry,
                     "SUPPORT",
                     _label(language, "support"),
-                    url="https://t.me/jawface",
+                    url="https://t.me/ragedick",
                     style="primary",
                 )
             ],
