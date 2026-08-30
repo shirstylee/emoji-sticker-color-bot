@@ -132,6 +132,10 @@ def test_vivid_intensity_produces_dense_purple_highlights() -> None:
     vivid_hue = colorsys.rgb_to_hsv(*(vivid[0, 0] / 255.0))[0]
     assert abs(vivid_hue - target_hue) < 0.01
     assert float(vivid_lab[0, 1, 0]) <= float(normal_lab[0, 1, 0]) + 0.005
+    assert float(vivid_lab[0, 2, 0]) < float(normal_lab[0, 2, 0]) - 0.02
+    assert float(vivid_lab[0, 0, 0] - vivid_lab[0, 2, 0]) > float(
+        normal_lab[0, 0, 0] - normal_lab[0, 2, 0]
+    )
     assert float(np.hypot(vivid_lab[0, 1, 1], vivid_lab[0, 1, 2])) >= float(
         np.hypot(normal_lab[0, 1, 1], normal_lab[0, 1, 2])
     )
