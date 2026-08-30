@@ -831,7 +831,7 @@ def recolor_tgs_document(
         # become flat bright discs. A small vivid-only bias keeps spheres and
         # knobs deep without changing solid or linear-gradient artwork.
         radial_midpoint = float(
-            np.clip(midpoint + max(0.0, strength - 1.0) * 0.20, 0.08, 0.92)
+            np.clip(midpoint + max(0.0, strength - 1.0) * 0.40, 0.08, 0.92)
         )
 
         def radial_transform(color: list[float]) -> list[float]:
