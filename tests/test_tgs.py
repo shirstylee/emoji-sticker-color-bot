@@ -104,7 +104,7 @@ def test_vivid_tgs_radial_gradient_is_deeper_than_linear_gradient() -> None:
         np.asarray(radial_gradient[1:4], dtype=np.float64)
     )[0]
 
-    assert float(radial_lightness) < float(linear_lightness) - 0.10
+    assert float(radial_lightness) < float(linear_lightness) - 0.14
 
 
 def test_unknown_tgs_fields_are_preserved() -> None:
