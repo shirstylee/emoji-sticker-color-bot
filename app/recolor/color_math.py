@@ -286,9 +286,9 @@ def recolor_rgb(
         # so small shaded objects remain deep and distinct, while retaining
         # enough highlight headroom for dots and fine details.
         highlight = np.maximum(output_lab[..., 0] - target_l, 0.0)
-        output_lab[..., 0] -= highlight * min(0.75, vivid * 1.3)
+        output_lab[..., 0] -= highlight * min(0.75, vivid * 1.4)
         shadow = np.maximum(target_l - output_lab[..., 0], 0.0)
-        output_lab[..., 0] -= shadow * min(0.40, vivid * 0.75)
+        output_lab[..., 0] -= shadow * min(0.40, vivid * 0.8)
         # The 0.9 coefficient is deliberately between the original excessive
         # boost (1.0) and the pastel-looking correction (0.7).
         output_lab[..., 1:3] *= 1.0 + vivid * 0.9
