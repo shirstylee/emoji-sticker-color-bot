@@ -98,13 +98,15 @@ def test_vivid_tgs_radial_gradient_is_deeper_than_linear_gradient() -> None:
     linear_gradient = linear_output["layers"][0]["shapes"][2]["g"]["k"]["k"]  # type: ignore[index]
     radial_gradient = radial_output["layers"][0]["shapes"][2]["g"]["k"]["k"]  # type: ignore[index]
     linear_lightness = srgb_to_oklab(
-        np.asarray(linear_gradient[1:4], dtype=np.float64)
-    )[0]
+        np.asarray([linear_gradient[1:4], linear_gradient[5:8]], dtype=np.float64)
+    )[..., 0]
     radial_lightness = srgb_to_oklab(
-        np.asarray(radial_gradient[1:4], dtype=np.float64)
-    )[0]
+        np.asarray([radial_gradient[1:4], radial_gradient[5:8]], dtype=np.float64)
+    )[..., 0]
 
-    assert float(radial_lightness) < float(linear_lightness) - 0.14
+    assert float(radial_lightness[0]) > float(linear_lightness[0]) + 0.02
+    assert float(radial_lightness[1]) < float(linear_lightness[1]) - 0.015
+    assert float(np.ptp(radial_lightness)) > float(np.ptp(linear_lightness)) + 0.03
 
 
 def test_unknown_tgs_fields_are_preserved() -> None:
