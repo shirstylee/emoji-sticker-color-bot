@@ -410,23 +410,68 @@ def _transform_gradient(gradient: dict[str, Any], transform: Any) -> None:
                     frame[name] = transform_array(payload)
 
 
-def _transform_walk(value: Any, transform: Any) -> None:
+def _transform_walk(
+    value: Any, transform: Any, *, radial_gradient_transform: Any | None = None
+) -> None:
     if isinstance(value, dict):
         color = value.get("c")
         if isinstance(color, dict):
             _transform_property(color, transform)
         gradient = value.get("g")
         if isinstance(gradient, dict):
-            _transform_gradient(gradient, transform)
+            gradient_transform = (
+                radial_gradient_transform
+                if value.get("t") == 2 and radial_gradient_transform is not None
+                else transform
+            )
+            _transform_gradient(gradient, gradient_transform)
         for child in value.values():
-            _transform_walk(child, transform)
+            _transform_walk(
+                child,
+                transform,
+                radial_gradient_transform=radial_gradient_transform,
+            )
     elif isinstance(value, list):
         for child in value:
-            _transform_walk(child, transform)
+            _transform_walk(
+                child,
+                transform,
+                radial_gradient_transform=radial_gradient_transform,
+            )
 
 
-def _transform_slots(document: dict[str, Any], transform: Any) -> None:
+def _radial_gradient_slot_ids(value: Any) -> set[str]:
+    result: set[str] = set()
+
+    def walk(child: Any) -> None:
+        if isinstance(child, dict):
+            gradient = child.get("g")
+            if child.get("t") == 2 and isinstance(gradient, dict):
+                prop = gradient.get("k")
+                if isinstance(prop, dict) and isinstance(prop.get("sid"), str):
+                    result.add(prop["sid"])
+            for nested in child.values():
+                walk(nested)
+        elif isinstance(child, list):
+            for nested in child:
+                walk(nested)
+
+    walk(value)
+    return result
+
+
+def _transform_slots(
+    document: dict[str, Any],
+    transform: Any,
+    *,
+    radial_gradient_transform: Any | None = None,
+) -> None:
     color_slots, gradient_slots = _slot_references(document)
+    radial_slots = (
+        _radial_gradient_slot_ids(document)
+        if radial_gradient_transform is not None
+        else set()
+    )
     for slot_id in color_slots:
         prop = _slot_property(document, slot_id)
         if prop is not None:
@@ -434,7 +479,12 @@ def _transform_slots(document: dict[str, Any], transform: Any) -> None:
     for slot_id, points in gradient_slots.items():
         prop = _slot_property(document, slot_id)
         if prop is not None:
-            _transform_gradient({"p": points, "k": prop}, transform)
+            gradient_transform = (
+                radial_gradient_transform
+                if slot_id in radial_slots and radial_gradient_transform is not None
+                else transform
+            )
+            _transform_gradient({"p": points, "k": prop}, gradient_transform)
 
 
 def strong_tint_tgs_document(
@@ -777,8 +827,31 @@ def recolor_tgs_document(
                 strength=strength,
             )
 
-        _transform_walk(output, transform)
-        _transform_slots(output, transform)
+        # Radial highlights otherwise inherit the document-wide midpoint and
+        # become flat bright discs. A small vivid-only bias keeps spheres and
+        # knobs deep without changing solid or linear-gradient artwork.
+        radial_midpoint = float(
+            np.clip(midpoint + max(0.0, strength - 1.0) * 0.20, 0.08, 0.92)
+        )
+
+        def radial_transform(color: list[float]) -> list[float]:
+            return recolor_normalized_color(
+                color,
+                target,
+                source_midpoint=radial_midpoint,
+                strength=strength,
+            )
+
+        _transform_walk(
+            output,
+            transform,
+            radial_gradient_transform=radial_transform,
+        )
+        _transform_slots(
+            output,
+            transform,
+            radial_gradient_transform=radial_transform,
+        )
     return output
 
 

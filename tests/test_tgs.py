@@ -81,6 +81,32 @@ def test_tgs_uses_one_palette_midpoint_and_preserves_dark_contours() -> None:
     assert float(lightness[1] - lightness[0]) > 0.30
 
 
+def test_vivid_tgs_radial_gradient_is_deeper_than_linear_gradient() -> None:
+    linear = sample_document()
+    radial = sample_document()
+    linear["layers"][0]["shapes"][2]["t"] = 1  # type: ignore[index]
+    radial["layers"][0]["shapes"][2]["t"] = 2  # type: ignore[index]
+    linear["layers"][0]["shapes"][2]["g"]["k"]["k"][1:4] = [0.6, 0.6, 0.6]  # type: ignore[index]
+    radial["layers"][0]["shapes"][2]["g"]["k"]["k"][1:4] = [0.6, 0.6, 0.6]  # type: ignore[index]
+
+    linear_output = recolor_tgs_document(
+        linear, parse_color("#8B00FF"), strength=1.4
+    )
+    radial_output = recolor_tgs_document(
+        radial, parse_color("#8B00FF"), strength=1.4
+    )
+    linear_gradient = linear_output["layers"][0]["shapes"][2]["g"]["k"]["k"]  # type: ignore[index]
+    radial_gradient = radial_output["layers"][0]["shapes"][2]["g"]["k"]["k"]  # type: ignore[index]
+    linear_lightness = srgb_to_oklab(
+        np.asarray(linear_gradient[1:4], dtype=np.float64)
+    )[0]
+    radial_lightness = srgb_to_oklab(
+        np.asarray(radial_gradient[1:4], dtype=np.float64)
+    )[0]
+
+    assert float(radial_lightness) < float(linear_lightness) - 0.04
+
+
 def test_unknown_tgs_fields_are_preserved() -> None:
     source = sample_document()
     output = recolor_tgs_document(source, parse_color("#FF0000"))
