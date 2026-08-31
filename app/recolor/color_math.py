@@ -14,6 +14,15 @@ RGB_RE = re.compile(
     r"(?:rgb\(\s*)?(?P<r>\d{1,3})\s*,\s*(?P<g>\d{1,3})\s*,\s*(?P<b>\d{1,3})(?:\s*\))?",
     re.IGNORECASE,
 )
+COLOR_LIST_RE = re.compile(
+    r"rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)"
+    r"|\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}"
+    r"|#[0-9a-fA-F]{6}(?![0-9a-fA-F])"
+    r"|#[0-9a-fA-F]{3}(?![0-9a-fA-F])"
+    r"|(?<![0-9a-fA-F])[0-9a-fA-F]{6}(?![0-9a-fA-F])"
+    r"|(?<![0-9a-fA-F])[0-9a-fA-F]{3}(?![0-9a-fA-F])",
+    re.IGNORECASE,
+)
 
 FloatArray = NDArray[np.float64]
 
@@ -81,6 +90,36 @@ def parse_color(value: str) -> ParsedColor:
     if any(channel > 255 for channel in channels):
         raise ValueError("RGB channels must be between 0 and 255")
     return ParsedColor(*channels)
+
+
+def parse_colors(value: str) -> list[ParsedColor]:
+    """Parse one or more HEX/RGB colors separated by whitespace or semicolons."""
+
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError("No colors were provided")
+    try:
+        return [parse_color(stripped)]
+    except ValueError:
+        pass
+
+    colors: list[ParsedColor] = []
+    position = 0
+    for match in COLOR_LIST_RE.finditer(stripped):
+        if stripped[position : match.start()].strip(" \t\r\n;|"):
+            raise ValueError("Invalid color list")
+        colors.append(parse_color(match.group(0)))
+        position = match.end()
+    if stripped[position:].strip(" \t\r\n;|") or not colors:
+        raise ValueError("Invalid color list")
+
+    unique: list[ParsedColor] = []
+    seen: set[str] = set()
+    for color in colors:
+        if color.hex not in seen:
+            seen.add(color.hex)
+            unique.append(color)
+    return unique
 
 
 def srgb_to_linear(rgb: FloatArray) -> FloatArray:

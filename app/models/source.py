@@ -34,6 +34,8 @@ class SourceItem:
     original_name: str | None = None
     custom_emoji_id: str | None = None
     needs_repainting: bool = False
+    target_color: str | None = None
+    source_index: int | None = None
 
 
 @dataclass(slots=True)

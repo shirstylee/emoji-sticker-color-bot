@@ -8,12 +8,13 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
-from app.models.source import SourceDescriptor
+from app.models.source import SourceDescriptor, SourceItem
 
 
 class JobStatus(StrEnum):
     SOURCE_ANALYSIS = "source_analysis"
     AWAITING_COLOR = "awaiting_color"
+    AWAITING_INTENSITY = "awaiting_intensity"
     GENERATING_PREVIEW = "generating_preview"
     AWAITING_PREVIEW_DECISION = "awaiting_preview_decision"
     AWAITING_OUTPUT_TYPE = "awaiting_output_type"
@@ -21,6 +22,7 @@ class JobStatus(StrEnum):
     AWAITING_TARGET_PACK = "awaiting_target_pack"
     AWAITING_SPLIT_CONFIRMATION = "awaiting_split_confirmation"
     AWAITING_RESULT_ACTION = "awaiting_result_action"
+    AWAITING_RETRY = "awaiting_retry"
     PROCESSING = "processing"
     PUBLISHING = "publishing"
     COMPLETED = "completed"
@@ -59,8 +61,11 @@ class RuntimeJob:
     is_admin: bool = False
     source: SourceDescriptor | None = None
     selected_color: str | None = None
+    selected_colors: list[str] = field(default_factory=list)
+    work_items: list[SourceItem] = field(default_factory=list)
     intensity: RecolorIntensity = RecolorIntensity.NORMAL
     adaptive: bool = False
+    direct_result: bool = False
     output_type: OutputType | None = None
     pack_title: str | None = None
     target_pack_name: str | None = None
@@ -81,6 +86,8 @@ class RuntimeJob:
     processing_task: asyncio.Task[object] | None = None
     created_sets: list[str] = field(default_factory=list)
     errors: list[tuple[int, str]] = field(default_factory=list)
+    base_errors: list[tuple[int, str]] = field(default_factory=list)
+    failed_items: list[SourceItem] = field(default_factory=list)
     statistics_recorded: bool = False
     last_ui_update_at: float = 0.0
 
@@ -92,12 +99,14 @@ class RuntimeJob:
     def interactive(self) -> bool:
         return self.status in {
             JobStatus.AWAITING_COLOR,
+            JobStatus.AWAITING_INTENSITY,
             JobStatus.AWAITING_PREVIEW_DECISION,
             JobStatus.AWAITING_OUTPUT_TYPE,
             JobStatus.AWAITING_PACK_NAME,
             JobStatus.AWAITING_TARGET_PACK,
             JobStatus.AWAITING_SPLIT_CONFIRMATION,
             JobStatus.AWAITING_RESULT_ACTION,
+            JobStatus.AWAITING_RETRY,
         }
 
     @property
@@ -105,7 +114,16 @@ class RuntimeJob:
         # The result has already been delivered in this state. Its optional
         # follow-up buttons may expire silently instead of producing a confusing
         # cleanup message long after the user finished recoloring.
-        return self.interactive and self.status != JobStatus.AWAITING_RESULT_ACTION
+        return self.interactive and self.status not in {
+            JobStatus.AWAITING_RESULT_ACTION,
+            JobStatus.AWAITING_RETRY,
+        }
+
+    @property
+    def processing_items(self) -> list[SourceItem]:
+        if self.work_items:
+            return self.work_items
+        return self.source.items if self.source is not None else []
 
     def touch(self) -> None:
         self.last_interaction_at = datetime.now(UTC)

@@ -22,7 +22,7 @@ from app.services.telegram_files import (
     download_thumbnail,
     sticker_extension,
 )
-from app.services.unicode_emoji import extract_single_emoji, render_emoji
+from app.services.unicode_emoji import extract_emojis, render_emoji
 from app.validators.source import SourceValidationError, validate_source_file
 
 
@@ -215,6 +215,59 @@ async def resolve_custom_emoji_entity(
     return await resolve_sticker(bot, job, stickers[0], settings)
 
 
+async def resolve_custom_emoji_entities(
+    bot: Bot,
+    job: RuntimeJob,
+    custom_emoji_ids: Sequence[str],
+    settings: Settings,
+) -> SourceDescriptor:
+    ordered_ids = list(dict.fromkeys(custom_emoji_ids))
+    if len(ordered_ids) > settings.max_logical_items:
+        raise SourceError("Too many Custom Emoji in one message")
+    stickers = await bot.get_custom_emoji_stickers(ordered_ids)
+    by_id = {
+        sticker.custom_emoji_id: sticker
+        for sticker in stickers
+        if sticker.custom_emoji_id is not None
+    }
+    source_dir = job.root / "source"
+    items: list[SourceItem] = []
+    for index, custom_emoji_id in enumerate(ordered_ids, 1):
+        sticker = by_id.get(custom_emoji_id)
+        if sticker is None:
+            job.errors.append((index, "Telegram did not return the Custom Emoji"))
+            continue
+        try:
+            path = await download_sticker(
+                bot, sticker, source_dir, index, settings.max_input_download
+            )
+            expected = sticker_format(sticker)
+            await _validate_download(path, settings, expected=expected)
+            preview_path: Path | None = None
+            if sticker.thumbnail is not None:
+                try:
+                    preview_path = await download_thumbnail(
+                        bot,
+                        sticker.thumbnail,
+                        source_dir,
+                        index,
+                        settings.max_input_download,
+                    )
+                except (OSError, ValueError):
+                    preview_path = None
+            items.append(_source_item(sticker, path, index, preview_path))
+        except (OSError, ValueError) as error:
+            job.errors.append((index, _job_error_reason(error)))
+    if not items:
+        raise SourceError("Telegram did not return usable Custom Emoji")
+    return SourceDescriptor(
+        kind=SourceKind.CUSTOM_EMOJI,
+        items=items,
+        title="Custom Emoji",
+        sticker_type="custom_emoji",
+    )
+
+
 async def resolve_document(
     bot: Bot, job: RuntimeJob, message: Message, settings: Settings
 ) -> SourceDescriptor:
@@ -344,20 +397,32 @@ async def resolve_message(
             for entity in entities
             if entity.type == MessageEntityType.CUSTOM_EMOJI and entity.custom_emoji_id
         ]
-        if len(custom_ids) == 1:
-            return await resolve_custom_emoji_entity(bot, job, custom_ids[0], settings)
-    grapheme = extract_single_emoji(text)
-    if grapheme:
-        path = await asyncio.to_thread(
-            render_emoji,
-            grapheme,
-            job.root / "source" / "001.png",
-            settings.emoji_font_path,
-        )
-        await _validate_download(path, settings, expected=MediaFormat.PNG)
+        if custom_ids:
+            return await resolve_custom_emoji_entities(bot, job, custom_ids, settings)
+    graphemes = extract_emojis(text)
+    if graphemes:
+        if len(graphemes) > settings.max_logical_items:
+            raise SourceError("Too many Unicode Emoji in one message")
+        items: list[SourceItem] = []
+        for index, grapheme in enumerate(graphemes, 1):
+            path = await asyncio.to_thread(
+                render_emoji,
+                grapheme,
+                job.root / "source" / f"{index:03d}.png",
+                settings.emoji_font_path,
+            )
+            await _validate_download(path, settings, expected=MediaFormat.PNG)
+            items.append(
+                SourceItem(
+                    index=index,
+                    path=path,
+                    format=MediaFormat.PNG,
+                    emoji_list=(grapheme,),
+                )
+            )
         return SourceDescriptor(
             kind=SourceKind.UNICODE,
-            items=[SourceItem(index=1, path=path, format=MediaFormat.PNG, emoji_list=(grapheme,))],
+            items=items,
             title="Unicode Emoji",
         )
     if message.document:

@@ -63,7 +63,7 @@ class ProcessingPipeline:
         *,
         preview: bool = False,
     ) -> Path:
-        target = parse_color(job.selected_color or "#000000")
+        target = parse_color(item.target_color or job.selected_color or "#000000")
         adaptive = bool(getattr(job, "adaptive", False))
         strong = bool(item.needs_repainting and not adaptive)
         intensity = getattr(job, "intensity", RecolorIntensity.NORMAL).strength
@@ -231,9 +231,12 @@ class ProcessingPipeline:
     ) -> list[tuple[SourceItem, Path]]:
         if job.source is None:
             raise RuntimeError("Job has no source")
+        items = job.processing_items
         output: list[tuple[SourceItem, Path]] = []
-        job.total = max(job.total, len(job.source.items) + len(job.errors))
-        for item in job.source.items:
+        job.failed_items = []
+        job.progress = 0
+        job.total = len(items) + len(job.base_errors)
+        for item in items:
             if job.cancel_event.is_set():
                 raise asyncio.CancelledError
             error: Exception | None = None
@@ -252,6 +255,7 @@ class ProcessingPipeline:
                 if not reason:
                     reason = type(error).__name__ if error else "Processing failed"
                 job.errors.append((item.index, reason))
+                job.failed_items.append(item)
                 continue
             output.append((item, path))
             job.progress = len(output)

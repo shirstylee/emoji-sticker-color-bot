@@ -40,6 +40,7 @@ BUTTON_LABELS = {
         "intensity_vivid": "Насыщенная",
         "cancel_last": "Отменить последнюю задачу",
         "cancel_all": "Отменить все задачи",
+        "retry_errors": "Повторить только ошибки",
     },
     "en": {
         "picker": "Pick a color",
@@ -71,6 +72,7 @@ BUTTON_LABELS = {
         "intensity_vivid": "Vivid",
         "cancel_last": "Cancel latest job",
         "cancel_all": "Cancel all jobs",
+        "retry_errors": "Retry failed only",
     },
 }
 
@@ -317,6 +319,36 @@ def _intensity_row(
     ]
 
 
+def intensity_keyboard(
+    registry: PremiumEmojiRegistry,
+    job_id: str,
+    language: str = "en",
+) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            _button(
+                registry,
+                "COLOR",
+                _label(language, f"intensity_{value.value}"),
+                callback_data=f"job:{job_id}:choose_intensity:{value.value}",
+                style="primary" if value == RecolorIntensity.NORMAL else None,
+            )
+        ]
+        for value in RecolorIntensity
+    ]
+    rows.append(
+        [
+            _button(
+                registry,
+                "BACK",
+                _label(language, "back"),
+                callback_data=f"job:{job_id}:intensity_back",
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def preview_keyboard(
     registry: PremiumEmojiRegistry,
     job_id: str,
@@ -365,14 +397,42 @@ def output_keyboard(
 
 
 def result_keyboard(
-    registry: PremiumEmojiRegistry, *, add_url: str | None = None, language: str = "en"
+    registry: PremiumEmojiRegistry,
+    *,
+    add_url: str | None = None,
+    language: str = "en",
+    job_id: str | None = None,
+    retry_errors: bool = False,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if add_url:
         rows.append([_button(registry, "ADD", _label(language, "add_pack"), url=add_url)])
-    rows.append([_button(registry, "BRUSH", _label(language, "restart"), callback_data="restart")])
+    if retry_errors and job_id:
+        rows.append(
+            [
+                _button(
+                    registry,
+                    "BRUSH",
+                    _label(language, "retry_errors"),
+                    callback_data=f"job:{job_id}:retry_failed",
+                    style="primary",
+                )
+            ]
+        )
+    restart_action = f"job:{job_id}:restart" if retry_errors and job_id else "restart"
+    home_action = f"job:{job_id}:home" if retry_errors and job_id else "menu:home"
     rows.append(
-        [_button(registry, "HOME", _label(language, "home"), callback_data="menu:home")]
+        [
+            _button(
+                registry,
+                "BRUSH",
+                _label(language, "restart"),
+                callback_data=restart_action,
+            )
+        ]
+    )
+    rows.append(
+        [_button(registry, "HOME", _label(language, "home"), callback_data=home_action)]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

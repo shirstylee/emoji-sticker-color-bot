@@ -13,12 +13,20 @@ class EmojiRenderError(ValueError):
     """A Unicode emoji cannot be safely rendered with the configured font."""
 
 
-def extract_single_emoji(value: str) -> str | None:
-    stripped = value.strip()
-    clusters = regex.findall(r"\X", stripped)
-    if len(clusters) != 1 or not emoji.is_emoji(clusters[0]):
+def extract_emojis(value: str) -> list[str] | None:
+    """Return every emoji grapheme from an emoji-only message."""
+
+    clusters = [cluster for cluster in regex.findall(r"\X", value.strip()) if not cluster.isspace()]
+    if not clusters or any(not emoji.is_emoji(cluster) for cluster in clusters):
         return None
-    return str(clusters[0])
+    return [str(cluster) for cluster in clusters]
+
+
+def extract_single_emoji(value: str) -> str | None:
+    clusters = extract_emojis(value)
+    if clusters is None or len(clusters) != 1:
+        return None
+    return clusters[0]
 
 
 def _render_with_font_size(grapheme: str, font_path: Path, font_size: int) -> Image.Image:

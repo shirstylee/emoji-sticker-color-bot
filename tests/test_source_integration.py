@@ -52,7 +52,12 @@ def zip_bytes() -> bytes:
     return output.getvalue()
 
 
-def sticker(file_id: str, *, custom: bool = False) -> Sticker:
+def sticker(
+    file_id: str,
+    *,
+    custom: bool = False,
+    custom_emoji_id: str = "custom-real-id",
+) -> Sticker:
     return Sticker(
         file_id=file_id,
         file_unique_id=f"unique-{file_id}",
@@ -62,7 +67,7 @@ def sticker(file_id: str, *, custom: bool = False) -> Sticker:
         is_animated=False,
         is_video=False,
         emoji="🎨",
-        custom_emoji_id="custom-real-id" if custom else None,
+        custom_emoji_id=custom_emoji_id if custom else None,
         file_size=len(webp_bytes()),
     )
 
@@ -72,6 +77,9 @@ class FakeBot:
         self.files = {
             "sticker": webp_bytes(),
             "custom": webp_bytes(),
+            "custom-1": webp_bytes(),
+            "custom-2": webp_bytes(),
+            "custom-3": webp_bytes(),
             "pack-1": webp_bytes(),
             "pack-2": webp_bytes(),
             "png": png_bytes(),
@@ -94,8 +102,13 @@ class FakeBot:
             stickers=[sticker("pack-1"), sticker("pack-2")],
         )
 
-    async def get_custom_emoji_stickers(self, _: list[str]) -> list[Sticker]:
-        return [sticker("custom", custom=True)]
+    async def get_custom_emoji_stickers(self, ids: list[str]) -> list[Sticker]:
+        if ids == ["custom-real-id"]:
+            return [sticker("custom", custom=True)]
+        return [
+            sticker(f"custom-{index}", custom=True, custom_emoji_id=custom_id)
+            for index, custom_id in enumerate(ids, 1)
+        ]
 
 
 def message(**values: Any) -> Message:
@@ -139,6 +152,38 @@ async def test_custom_emoji_entity_source(settings: Settings) -> None:
     source = await resolve_message(FakeBot(), job, message(text="🎨", entities=[entity]), settings)  # type: ignore[arg-type]
     assert source.kind == SourceKind.CUSTOM_EMOJI
     assert source.items[0].custom_emoji_id == "custom-real-id"
+    await manager.finish(job.job_id)
+
+
+@pytest.mark.asyncio
+async def test_multiple_custom_emoji_entities_become_separate_items(
+    settings: Settings,
+) -> None:
+    manager, job = await new_job(settings)
+    entities = [
+        MessageEntity(
+            type="custom_emoji",
+            offset=index * 2,
+            length=2,
+            custom_emoji_id=f"custom-id-{index + 1}",
+        )
+        for index in range(3)
+    ]
+
+    source = await resolve_message(
+        FakeBot(),
+        job,
+        message(text="🎨🔥💜", entities=entities),
+        settings,  # type: ignore[arg-type]
+    )
+
+    assert source.kind == SourceKind.CUSTOM_EMOJI
+    assert [item.custom_emoji_id for item in source.items] == [
+        "custom-id-1",
+        "custom-id-2",
+        "custom-id-3",
+    ]
+    assert [item.index for item in source.items] == [1, 2, 3]
     await manager.finish(job.job_id)
 
 
@@ -264,4 +309,25 @@ async def test_unicode_source_with_mock_local_renderer(
     source = await resolve_message(FakeBot(), job, message(text="👨‍💻"), settings)  # type: ignore[arg-type]
     assert source.kind == SourceKind.UNICODE
     assert source.items[0].format == MediaFormat.PNG
+    await manager.finish(job.job_id, JobStatus.COMPLETED)
+
+
+@pytest.mark.asyncio
+async def test_multiple_unicode_emoji_become_separate_items(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def render(_: str, destination: Path, __: Path | None) -> Path:
+        destination.write_bytes(png_bytes())
+        return destination
+
+    monkeypatch.setattr("app.services.source_resolver.render_emoji", render)
+    manager, job = await new_job(settings)
+
+    source = await resolve_message(
+        FakeBot(), job, message(text="🔥 👨‍💻 ❤️"), settings  # type: ignore[arg-type]
+    )
+
+    assert source.kind == SourceKind.UNICODE
+    assert [item.emoji_list for item in source.items] == [("🔥",), ("👨‍💻",), ("❤️",)]
+    assert len({item.path.name for item in source.items}) == 3
     await manager.finish(job.job_id, JobStatus.COMPLETED)

@@ -17,7 +17,7 @@ EN: dict[str, str] = {
     ),
     "send_source": (
         "{icon} <b>Send material to recolor:</b>\n\n"
-        "<blockquote>{emoji_icon} Premium Emoji — as a separate message\n"
+        "<blockquote>{emoji_icon} Premium Emoji — one or more in one message\n"
         "{sticker_icon} Sticker — as a separate message\n"
         "{link_icon} Pack link — addemoji or addstickers\n"
         "{file_icon} File — TGS, WEBP, WEBM, PNG, or ZIP</blockquote>"
@@ -37,7 +37,7 @@ EN: dict[str, str] = {
     ),
     "help": (
         "{icon} <b>Emoji &amp; Sticker Color Bot — help</b>\n\n"
-        "Send one sticker or Custom Emoji, a t.me/addstickers/… or t.me/addemoji/… link, "
+        "Send one or more Custom Emoji, a sticker, a t.me/addstickers/… or t.me/addemoji/… link, "
         "Unicode Emoji, PNG, WEBP, TGS, WEBM, ZIP, or one media group.\n\n"
         "Colors accept HEX or RGB. Emoji Pack creates Custom Emoji; Sticker Pack creates regular "
         "stickers. Adaptive is only for Custom Emoji and Telegram chooses its color. Unicode Emoji "
@@ -51,7 +51,8 @@ EN: dict[str, str] = {
         "<code>#03A9F4</code> — Light blue\n<code>#2196F3</code> — Blue\n"
         "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink</blockquote>\n\n"
         "Formats: <code>#FF00AA</code>, <code>F0A</code>, "
-        "<code>rgb(255, 0, 170)</code>, <code>255, 0, 170</code>."
+        "<code>rgb(255, 0, 170)</code>, <code>255, 0, 170</code>. "
+        "Send multiple HEX codes separated by spaces or new lines."
     ),
     "language": "{icon} Choose a language:",
     "language_changed": "{icon} Language changed.",
@@ -73,7 +74,8 @@ EN: dict[str, str] = {
         "<code>#03A9F4</code> — Light blue\n<code>#2196F3</code> — Blue\n"
         "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink</blockquote>\n\n"
         "Tap a code to copy it and send it to the bot. Or open Pick a color, copy the "
-        "HEX/RGB code from the website, and send it as a message."
+        "HEX/RGB code from the website, and send it as a message. Multiple HEX codes "
+        "can be separated by spaces or new lines."
     ),
     "pack_source_found": (
         "{icon} <b>Pack ready for processing</b>\n\n"
@@ -85,11 +87,25 @@ EN: dict[str, str] = {
         "<code>#FFEB3B</code> — Yellow\n<code>#4CAF50</code> — Green\n"
         "<code>#03A9F4</code> — Light blue\n<code>#2196F3</code> — Blue\n"
         "<code>#9C27B0</code> — Purple\n<code>#E91E63</code> — Pink</blockquote>\n\n"
-        "Tap a code, copy it, and send it to the bot, or use Pick a color."
+        "Tap a code, copy it, and send it to the bot, or use Pick a color. Multiple HEX "
+        "codes can be separated by spaces or new lines."
     ),
     "invalid_color": (
         "Color not recognized. Example: <code>#8B5CF6</code> "
         "or <code>rgb(139, 92, 246)</code>."
+    ),
+    "too_many_colors": (
+        "This would create too many results in one job. Choose at most {maximum_colors} "
+        "colors and no more than {maximum_items} resulting items."
+    ),
+    "choose_intensity": (
+        "{icon} <b>Choose recoloring intensity</b>\n\n"
+        "<blockquote>Source items: <b>{source_count}</b>\n"
+        "Selected colors: <b>{color_count}</b>\n"
+        "Resulting items: <b>{result_count}</b>\n"
+        "Colors: <code>{colors}</code></blockquote>\n\n"
+        "Soft retains more source hues, Normal works for most stickers, and Vivid "
+        "produces a dense target color."
     ),
     "choose_output": (
         "{icon} Color <code>{color}</code> accepted.\n"
@@ -207,6 +223,10 @@ EN: dict[str, str] = {
         "Successfully added: <b>{done} / {total}</b>. Items already added were preserved."
     ),
     "telegram_item_rejected": "Telegram rejected the prepared file",
+    "retry_failed": (
+        "{icon} Retrying only failed items: <b>{count}</b>. Completed results will not "
+        "be processed again."
+    ),
     "partial": "Done: {done} / {total}\nFailed: {failed}",
     "file_too_large": "The file is too large.",
     "source_invalid": "The file is empty or damaged.",

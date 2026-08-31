@@ -9,6 +9,7 @@ from PIL import Image
 from app.recolor.color_math import (
     oklab_to_srgb,
     parse_color,
+    parse_colors,
     recolor_rgb,
     srgb_to_oklab,
 )
@@ -37,6 +38,18 @@ def test_color_parsing_and_normalization(value: str, expected: str) -> None:
 def test_invalid_color_is_rejected_completely(value: str) -> None:
     with pytest.raises(ValueError):
         parse_color(value)
+
+
+def test_multiple_colors_are_parsed_normalized_and_deduplicated() -> None:
+    colors = parse_colors("#ff0000 #00FF00\nrgb(0, 0, 255); #FF0000")
+
+    assert [color.hex for color in colors] == ["#FF0000", "#00FF00", "#0000FF"]
+
+
+@pytest.mark.parametrize("value", ["#FF0000 nope", "#FF0000, #00FF00", "red blue"])
+def test_invalid_multiple_color_input_is_rejected(value: str) -> None:
+    with pytest.raises(ValueError):
+        parse_colors(value)
 
 
 def test_oklab_round_trip() -> None:

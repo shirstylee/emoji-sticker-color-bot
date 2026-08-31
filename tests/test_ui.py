@@ -16,6 +16,7 @@ from app.keyboards.user import (
     color_keyboard,
     existing_pack_keyboard,
     information_keyboard,
+    intensity_keyboard,
     language_keyboard,
     main_menu_keyboard,
     pack_name_keyboard,
@@ -148,7 +149,7 @@ def test_rich_messages_render_with_real_premium_emoji(
     assert not RU["send_source"].startswith("<blockquote>")
     assert "\n\n<blockquote>{emoji_icon}" in RU["send_source"]
     assert RU["send_source"].endswith("</blockquote>")
-    assert "Premium Emoji — отдельным сообщением" in RU["send_source"]
+    assert "Premium Emoji — один или несколько в сообщении" in RU["send_source"]
     assert "Стикер — отдельным сообщением" in RU["send_source"]
     assert "<blockquote>Обработано:" in RU["processing"]
 
@@ -185,6 +186,35 @@ def test_single_result_and_information_actions(
     assert str(information.inline_keyboard[0][0].url) == "https://t.me/ragedick"
     assert information.inline_keyboard[0][0].style == "primary"
     assert information.inline_keyboard[1][0].callback_data == "menu:home"
+
+
+def test_intensity_choice_and_failed_retry_keyboards(
+    registry: PremiumEmojiRegistry,
+) -> None:
+    intensity = intensity_keyboard(registry, "job", "ru")
+    assert [row[0].callback_data for row in intensity.inline_keyboard] == [
+        "job:job:choose_intensity:soft",
+        "job:job:choose_intensity:normal",
+        "job:job:choose_intensity:vivid",
+        "job:job:intensity_back",
+    ]
+    assert [row[0].text for row in intensity.inline_keyboard] == [
+        "Бережная",
+        "Обычная",
+        "Насыщенная",
+        "Назад",
+    ]
+
+    retry = result_keyboard(
+        registry,
+        language="ru",
+        job_id="job",
+        retry_errors=True,
+    )
+    assert retry.inline_keyboard[0][0].callback_data == "job:job:retry_failed"
+    assert retry.inline_keyboard[0][0].style == "primary"
+    assert retry.inline_keyboard[-2][0].callback_data == "job:job:restart"
+    assert retry.inline_keyboard[-1][0].callback_data == "job:job:home"
 
 
 def test_admin_existing_pack_keyboard_lists_saved_packs(

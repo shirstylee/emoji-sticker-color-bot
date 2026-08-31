@@ -9,6 +9,7 @@ import logging
 import math
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from app.keyboards.user import (
     adaptive_preview_keyboard,
     color_keyboard,
     existing_pack_keyboard,
+    intensity_keyboard,
     output_keyboard,
     pack_name_keyboard,
     preview_keyboard,
@@ -38,7 +40,7 @@ from app.keyboards.user import (
 from app.logging import safe_error
 from app.models.job import JobStatus, OutputType, RecolorIntensity, RuntimeJob
 from app.models.source import MediaFormat, SourceItem, SourceKind
-from app.recolor.color_math import parse_color
+from app.recolor.color_math import parse_colors
 from app.services.archive import split_output_zip
 from app.services.jobs import ActiveJobError
 from app.services.source_resolver import (
@@ -49,13 +51,14 @@ from app.services.source_resolver import (
     resolve_message,
 )
 from app.services.telegram_stickers import pack_url
-from app.services.unicode_emoji import extract_single_emoji
+from app.services.unicode_emoji import extract_emojis
 from app.services.user_rate_limiter import RateLimitExceeded, classify_job
 from app.validators.common import detect_format
 from app.validators.source import SourceValidationError
 
 LOGGER = logging.getLogger(__name__)
 router = Router(name="workflow")
+MAX_COLORS_PER_JOB = 10
 
 
 def _countdown(seconds: float) -> str:
@@ -286,6 +289,7 @@ async def _accept_source(
         else:
             source = await resolve_message(context.bot, job, message, context.settings)
         job.source = source
+        job.base_errors = list(job.errors)
         extracted = sum(item.path.stat().st_size for item in source.items)
         webm = sum(item.format == MediaFormat.WEBM for item in source.items)
         tgs = sum(item.format == MediaFormat.TGS for item in source.items)
@@ -326,7 +330,7 @@ def _looks_like_new_source(message: Message) -> bool:
     value = (message.text or "").strip()
     return (
         message_pack_link(message) is not None
-        or extract_single_emoji(value) is not None
+        or extract_emojis(value) is not None
         or any(
             entity.type == MessageEntityType.CUSTOM_EMOJI
             for entity in (message.entities or [])
@@ -428,6 +432,77 @@ def _intensity_label(job: RuntimeJob) -> str:
     return text(job.language, f"intensity_{job.intensity.value}")
 
 
+def _color_summary(job: RuntimeJob) -> str:
+    if job.adaptive:
+        return "Adaptive"
+    return ", ".join(job.selected_colors) or job.selected_color or "—"
+
+
+def _build_work_items(job: RuntimeJob) -> None:
+    if job.source is None:
+        job.work_items = []
+        return
+    if job.adaptive:
+        job.work_items = list(job.source.items)
+        job.total = len(job.work_items) + len(job.base_errors)
+        return
+    colors = job.selected_colors or ([job.selected_color] if job.selected_color else [])
+    variants: list[SourceItem] = []
+    for color in colors:
+        for source_item in job.source.items:
+            variants.append(
+                replace(
+                    source_item,
+                    index=len(variants) + 1,
+                    target_color=color,
+                    source_index=source_item.index,
+                )
+            )
+    job.work_items = variants
+    job.total = len(variants) + len(job.base_errors)
+
+
+async def _show_intensity_choice(
+    control: Message, job: RuntimeJob, context: AppContext
+) -> None:
+    if job.source is None:
+        return
+    job.status = JobStatus.AWAITING_INTENSITY
+    await context.ui.edit(
+        control,
+        text(
+            job.language,
+            "choose_intensity",
+            icon=context.premium.html("COLOR"),
+            source_count=len(job.source.items),
+            color_count=len(job.selected_colors),
+            result_count=len(job.work_items),
+            colors=_color_summary(job),
+        ),
+        reply_markup=intensity_keyboard(
+            context.premium,
+            job.job_id,
+            job.language,
+        ),
+    )
+
+
+async def _start_after_intensity(
+    control: Message, job: RuntimeJob, context: AppContext
+) -> None:
+    job.direct_result = len(job.processing_items) == 1
+    if job.direct_result:
+        job.output_type = OutputType.STICKER_PACK
+        job.status = JobStatus.PROCESSING
+        task = asyncio.create_task(
+            _run_single_result(control, job, context),
+            name=f"single-{job.short_id}",
+        )
+        job.processing_task = task
+        return
+    await _render_preview(control, job, context)
+
+
 async def _render_preview(
     control: Message, job: RuntimeJob, context: AppContext
 ) -> None:
@@ -435,7 +510,7 @@ async def _render_preview(
         return
     job.status = JobStatus.GENERATING_PREVIEW
     preview_error: Exception | None = None
-    for preview_item in job.source.items:
+    for preview_item in job.processing_items:
         try:
             path = await context.pipeline.process_item(job, preview_item, preview=True)
             preview_format = (
@@ -474,11 +549,29 @@ async def _select_color(
     control: Message, job: RuntimeJob, color_value: str, context: AppContext
 ) -> None:
     try:
-        color = parse_color(color_value)
+        colors = parse_colors(color_value)
     except ValueError:
         await context.ui.answer(
             control,
             f'{context.premium.html("ERROR")} {text(job.language, "invalid_color")}',
+        )
+        return
+    if job.source is None:
+        return
+    result_count = len(job.source.items) * len(colors)
+    if (
+        len(colors) > MAX_COLORS_PER_JOB
+        or result_count > context.settings.max_logical_items
+    ):
+        await context.ui.answer(
+            control,
+            f'{context.premium.html("ERROR")} '
+            + text(
+                job.language,
+                "too_many_colors",
+                maximum_colors=MAX_COLORS_PER_JOB,
+                maximum_items=context.settings.max_logical_items,
+            ),
         )
         return
     if not job.is_admin and job.color_changes >= context.limits.preview_color_changes:
@@ -488,30 +581,40 @@ async def _select_color(
         )
         return
     job.color_changes += 1
-    job.selected_color = color.hex
+    job.selected_colors = [color.hex for color in colors]
+    job.selected_color = job.selected_colors[0]
     job.adaptive = False
+    job.errors = list(job.base_errors)
+    job.failed_items = []
+    _build_work_items(job)
     job.touch()
-    if job.source is None:
-        return
-    if len(job.source.items) == 1:
-        job.output_type = OutputType.STICKER_PACK
-        job.status = JobStatus.PROCESSING
-        task = asyncio.create_task(
-            _run_single_result(control, job, context),
-            name=f"single-{job.short_id}",
-        )
-        job.processing_task = task
-        return
-    await _render_preview(control, job, context)
+    await _show_intensity_choice(control, job, context)
 
 
 async def _handle_color_text(message: Message, job: RuntimeJob, context: AppContext) -> None:
     try:
-        parse_color(message.text or "")
+        colors = parse_colors(message.text or "")
     except ValueError:
         await context.ui.answer(
             message,
             f'{context.premium.html("ERROR")} {text(job.language, "invalid_color")}',
+        )
+        return
+    if job.source is None:
+        return
+    if (
+        len(colors) > MAX_COLORS_PER_JOB
+        or len(colors) * len(job.source.items) > context.settings.max_logical_items
+    ):
+        await context.ui.answer(
+            message,
+            f'{context.premium.html("ERROR")} '
+            + text(
+                job.language,
+                "too_many_colors",
+                maximum_colors=MAX_COLORS_PER_JOB,
+                maximum_items=context.settings.max_logical_items,
+            ),
         )
         return
     control: Message | None = None
@@ -636,7 +739,11 @@ async def _return_from_pack_choice(
             ),
         )
         return
-    if job.source is not None and len(job.source.items) == 1:
+    if job.direct_result or (
+        job.source is not None
+        and len(job.source.items) == 1
+        and len(job.selected_colors) <= 1
+    ):
         job.output_type = OutputType.STICKER_PACK
         job.status = JobStatus.AWAITING_RESULT_ACTION
         await context.ui.edit(
@@ -645,7 +752,7 @@ async def _return_from_pack_choice(
                 job.language,
                 "single_result_ready",
                 icon=context.premium.html("SUCCESS"),
-                color=job.selected_color or "Adaptive",
+                color=_color_summary(job),
                 intensity=_intensity_label(job),
                 **context.premium.placeholders(),
             ),
@@ -667,7 +774,7 @@ async def _return_from_pack_choice(
             job.language,
             key,
             icon=context.premium.html("COLOR"),
-            color=job.selected_color,
+            color=_color_summary(job),
             count=job.total,
             **context.premium.placeholders(),
         ),
@@ -729,7 +836,7 @@ async def _select_existing_pack(
         )
         return False
     maximum = TELEGRAM_CUSTOM_EMOJI_SET_MAX if custom else TELEGRAM_REGULAR_STICKER_SET_MAX
-    incoming = len(job.source.items) if job.source else 0
+    incoming = len(job.processing_items)
     if len(sticker_set.stickers) + incoming > maximum:
         await context.ui.answer(
             control,
@@ -872,7 +979,7 @@ async def _start_processing(control: Message, job: RuntimeJob, context: AppConte
             if job.output_type == OutputType.EMOJI_PACK
             else TELEGRAM_REGULAR_STICKER_SET_MAX
         )
-        if len(job.source.items) > maximum and not job.split_allowed:
+        if len(job.processing_items) > maximum and not job.split_allowed:
             job.status = JobStatus.AWAITING_SPLIT_CONFIRMATION
             await context.ui.edit(
                 control,
@@ -926,7 +1033,7 @@ async def _run_single_result(
                 job.language,
                 "single_result_ready",
                 icon=context.premium.html("SUCCESS"),
-                color=job.selected_color or "Adaptive",
+                color=_color_summary(job),
                 intensity=_intensity_label(job),
                 **context.premium.placeholders(),
             ),
@@ -957,12 +1064,28 @@ async def _run_single_result(
                 processed=job.progress,
                 processing_ms=round((time.monotonic() - started) * 1000),
             )
-        with contextlib.suppress(Exception):
-            await context.ui.edit(
-                control,
+        if job.failed_items:
+            job.status = JobStatus.AWAITING_RETRY
+            body = (
                 f'{context.premium.html("ERROR")} '
-                + text(job.language, "service_error"),
+                + text(job.language, "service_error")
+                + "\n\n"
+                + _error_summary(job)
             )
+            with contextlib.suppress(Exception):
+                await context.ui.edit(
+                    control,
+                    body,
+                    reply_markup=result_keyboard(
+                        context.premium,
+                        language=job.language,
+                        job_id=job.job_id,
+                        retry_errors=True,
+                    ),
+                )
+            job.processing_task = None
+            job.touch()
+            return
         await context.jobs.finish(job.job_id, JobStatus.FAILED)
 
 
@@ -1016,10 +1139,15 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
                     job.language,
                     "done_file",
                     icon=context.premium.html("SUCCESS"),
-                    color=job.selected_color or "Adaptive",
+                    color=_color_summary(job),
                     **context.premium.placeholders(),
                 ),
-                reply_markup=result_keyboard(context.premium, language=job.language),
+                reply_markup=result_keyboard(
+                    context.premium,
+                    language=job.language,
+                    job_id=job.job_id,
+                    retry_errors=bool(job.failed_items),
+                ),
             )
         elif job.output_type == OutputType.ZIP:
             await _deliver_zip(control, job, [path for _, path in outputs], context)
@@ -1075,10 +1203,21 @@ async def _run_job(control: Message, job: RuntimeJob, context: AppContext) -> No
             await context.ui.edit(
                 control,
                 body,
+                reply_markup=result_keyboard(
+                    context.premium,
+                    language=job.language,
+                    job_id=job.job_id,
+                    retry_errors=bool(job.failed_items),
+                ),
             )
     finally:
         await _delete_old_preview(job, context)
-        await context.jobs.finish(job.job_id, final_status)
+        job.processing_task = None
+        if job.failed_items and final_status != JobStatus.CANCELLED:
+            job.status = JobStatus.AWAITING_RETRY
+            job.touch()
+        else:
+            await context.jobs.finish(job.job_id, final_status)
 
 
 async def _deliver_zip(
@@ -1090,7 +1229,7 @@ async def _deliver_zip(
         files,
         job.root / "output",
         pack_name=title,
-        selected_color=job.selected_color or "Adaptive",
+        selected_color=_color_summary(job),
         mode="adaptive" if job.adaptive else "fixed color",
         part_limit=context.settings.max_output_zip_part,
     )
@@ -1110,7 +1249,7 @@ async def _deliver_zip(
         job.language,
         "done_file",
         icon=context.premium.html("SUCCESS"),
-        color=job.selected_color or "Adaptive",
+        color=_color_summary(job),
         **context.premium.placeholders(),
     )
     if job.errors:
@@ -1118,7 +1257,12 @@ async def _deliver_zip(
     await context.ui.edit(
         control,
         body,
-        reply_markup=result_keyboard(context.premium, language=job.language),
+        reply_markup=result_keyboard(
+            context.premium,
+            language=job.language,
+            job_id=job.job_id,
+            retry_errors=bool(job.failed_items),
+        ),
     )
 
 
@@ -1199,6 +1343,7 @@ async def _append_existing_pack(
     async def item_error(position: int, error: Exception) -> None:
         item = outputs[position - 1][0]
         job.errors.append((item.index, "message_key:telegram_item_rejected"))
+        job.failed_items.append(item)
         context.errors.add(
             job_id=job.job_id,
             component=f"existing_pack_item_{item.index}",
@@ -1234,6 +1379,8 @@ async def _append_existing_pack(
             context.premium,
             add_url=url,
             language=job.language,
+            job_id=job.job_id,
+            retry_errors=bool(job.failed_items),
         ),
     )
 
@@ -1337,17 +1484,23 @@ async def _publish_packs(
             (path, detect_format(path), item.emoji_list)
             for item, path in group
         ]
-        name = await context.publisher.publish_set(
-            user_id=job.user_id,
-            title=part_title,
-            bot_username=context.bot_username,
-            files=files,
-            custom_emoji=custom,
-            needs_repainting=job.adaptive,
-            cancel_event=job.cancel_event,
-            on_flood=publication_flood,
-            on_progress=publication_progress,
-        )
+        try:
+            name = await context.publisher.publish_set(
+                user_id=job.user_id,
+                title=part_title,
+                bot_username=context.bot_username,
+                files=files,
+                custom_emoji=custom,
+                needs_repainting=job.adaptive,
+                cancel_event=job.cancel_event,
+                on_flood=publication_flood,
+                on_progress=publication_progress,
+            )
+        except Exception as error:
+            job.failed_items.extend(item for item, _ in group)
+            reason = str(error).strip() or type(error).__name__
+            job.errors.extend((item.index, reason) for item, _ in group)
+            raise
         published = group_offset + len(group)
         job.progress = published
         job.created_sets.append(name)
@@ -1382,7 +1535,7 @@ async def _publish_packs(
         title=html.escape(title),
         kind=kind_label,
         count=len(outputs),
-        color=job.selected_color or "Adaptive",
+        color=_color_summary(job),
         **context.premium.placeholders(),
     )
     if len(links) > 1:
@@ -1393,7 +1546,11 @@ async def _publish_packs(
         control,
         body,
         reply_markup=result_keyboard(
-            context.premium, add_url=links[0], language=job.language
+            context.premium,
+            add_url=links[0],
+            language=job.language,
+            job_id=job.job_id,
+            retry_errors=bool(job.failed_items),
         ),
     )
 
@@ -1469,6 +1626,73 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
     if action == "pack_back":
         await _return_from_pack_choice(control, job, context)
         return
+    if action == "retry_failed":
+        if job.status != JobStatus.AWAITING_RETRY or not job.failed_items:
+            return
+        retry_items = list(job.failed_items)
+        job.work_items = retry_items
+        job.failed_items = []
+        job.errors = list(job.base_errors)
+        job.progress = 0
+        job.total = len(retry_items) + len(job.base_errors)
+        job.cancel_event = asyncio.Event()
+        if (
+            job.output_type in {OutputType.EMOJI_PACK, OutputType.STICKER_PACK}
+            and job.target_pack_name is None
+            and len(job.created_sets) == 1
+        ):
+            maximum = (
+                TELEGRAM_CUSTOM_EMOJI_SET_MAX
+                if job.output_type == OutputType.EMOJI_PACK
+                else TELEGRAM_REGULAR_STICKER_SET_MAX
+            )
+            if job.publication_total <= maximum:
+                job.target_pack_name = job.created_sets[0]
+                job.target_pack_title = job.pack_title or "Recolored"
+        await context.ui.edit(
+            control,
+            text(
+                job.language,
+                "retry_failed",
+                icon=context.premium.html("LOADING"),
+                count=len(retry_items),
+            ),
+            reply_markup=processing_keyboard(
+                context.premium, job.job_id, job.language
+            ),
+        )
+        if job.direct_result:
+            job.status = JobStatus.PROCESSING
+            task = asyncio.create_task(
+                _run_single_result(control, job, context),
+                name=f"retry-single-{job.short_id}",
+            )
+            job.processing_task = task
+        else:
+            await _start_processing(control, job, context)
+        return
+    if action == "intensity_back":
+        job.status = JobStatus.AWAITING_COLOR
+        await context.ui.edit(
+            control,
+            text(job.language, "colors", icon=context.premium.html("COLOR")),
+            reply_markup=color_keyboard(
+                context.premium,
+                job.job_id,
+                context.settings.color_picker_url,
+                language=job.language,
+            ),
+        )
+        return
+    if action == "choose_intensity" and len(parts) == 4:
+        if job.adaptive or job.status != JobStatus.AWAITING_INTENSITY:
+            return
+        try:
+            job.intensity = RecolorIntensity(parts[3])
+        except ValueError:
+            return
+        await _start_after_intensity(control, job, context)
+        return
     if action == "existing_saved" and len(parts) == 4:
         try:
             selected = job.target_pack_options[int(parts[3])]
@@ -1507,7 +1731,7 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
         )
         job.output_type = OutputType.FILE
         try:
-            path = await context.pipeline.process_item(job, job.source.items[0])
+            path = await context.pipeline.process_item(job, job.processing_items[0])
             await _telegram_send(
                 lambda: control.answer_document(
                     FSInputFile(path, filename=f"recolored{path.suffix.lower()}"),
@@ -1529,7 +1753,7 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
                 job.language,
                 "single_result_ready",
                 icon=context.premium.html("SUCCESS"),
-                color=job.selected_color or "Adaptive",
+                color=_color_summary(job),
                 intensity=_intensity_label(job),
                 **context.premium.placeholders(),
             ),
@@ -1550,7 +1774,7 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
         if selected_intensity == job.intensity:
             return
         job.intensity = selected_intensity
-        if len(job.source.items) == 1:
+        if job.direct_result:
             job.output_type = OutputType.STICKER_PACK
             job.status = JobStatus.PROCESSING
             task = asyncio.create_task(
@@ -1592,8 +1816,8 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
                 job.language,
                 key,
                 icon=context.premium.html("COLOR"),
-                color=job.selected_color,
-                count=job.total,
+                color=_color_summary(job),
+                count=len(job.processing_items),
                 **context.premium.placeholders(),
             ),
             reply_markup=output_keyboard(
@@ -1603,10 +1827,15 @@ async def job_callback(callback: CallbackQuery, context: AppContext) -> None:
     elif action == "adaptive":
         job.adaptive = True
         job.selected_color = None
+        job.selected_colors = []
+        job.errors = list(job.base_errors)
+        job.failed_items = []
+        _build_work_items(job)
+        job.direct_result = False
         job.output_type = OutputType.EMOJI_PACK
         job.status = JobStatus.AWAITING_PREVIEW_DECISION
         if job.source:
-            item = job.source.items[0]
+            item = job.processing_items[0]
             try:
                 preview_path = await context.pipeline.process_item(
                     job, item, preview=True

@@ -17,7 +17,7 @@ RU: dict[str, str] = {
     ),
     "send_source": (
         "{icon} <b>Отправьте материал для перекраски:</b>\n\n"
-        "<blockquote>{emoji_icon} Premium Emoji — отдельным сообщением\n"
+        "<blockquote>{emoji_icon} Premium Emoji — один или несколько в сообщении\n"
         "{sticker_icon} Стикер — отдельным сообщением\n"
         "{link_icon} Ссылка на набор — addemoji или addstickers\n"
         "{file_icon} Файл — TGS, WEBP, WEBM, PNG или ZIP</blockquote>"
@@ -37,7 +37,7 @@ RU: dict[str, str] = {
     ),
     "help": (
         "{icon} <b>Emoji &amp; Sticker Color Bot — помощь</b>\n\n"
-        "Можно отправить один стикер или Custom Emoji, ссылку t.me/addstickers/… или "
+        "Можно отправить один или несколько Custom Emoji, стикер, ссылку t.me/addstickers/… или "
         "t.me/addemoji/…, Unicode Emoji, PNG, WEBP, TGS, WEBM, ZIP или одну media group.\n\n"
         "Цвет принимается как HEX или RGB. Эмодзи-пак создаёт Custom Emoji, стикер-пак — "
         "обычные стикеры. Adaptive доступен только для Custom Emoji и окрашивается Telegram. "
@@ -51,7 +51,8 @@ RU: dict[str, str] = {
         "<code>#03A9F4</code> — Голубой\n<code>#2196F3</code> — Синий\n"
         "<code>#9C27B0</code> — Фиолетовый\n<code>#E91E63</code> — Розовый</blockquote>\n\n"
         "Форматы: <code>#FF00AA</code>, <code>F0A</code>, "
-        "<code>rgb(255, 0, 170)</code>, <code>255, 0, 170</code>."
+        "<code>rgb(255, 0, 170)</code>, <code>255, 0, 170</code>. "
+        "Несколько HEX-кодов можно отправить через пробел или с новой строки."
     ),
     "language": "{icon} Выберите язык:",
     "language_changed": "{icon} Язык изменён.",
@@ -73,7 +74,8 @@ RU: dict[str, str] = {
         "<code>#03A9F4</code> — Голубой\n<code>#2196F3</code> — Синий\n"
         "<code>#9C27B0</code> — Фиолетовый\n<code>#E91E63</code> — Розовый</blockquote>\n\n"
         "Нажмите на код, скопируйте его и отправьте боту. Либо откройте «Подобрать цвет», "
-        "скопируйте HEX/RGB-код с сайта и отправьте его сообщением."
+        "скопируйте HEX/RGB-код с сайта и отправьте его сообщением. Можно отправить "
+        "несколько HEX-кодов через пробел или с новой строки."
     ),
     "pack_source_found": (
         "{icon} <b>Набор готов к обработке</b>\n\n"
@@ -86,11 +88,25 @@ RU: dict[str, str] = {
         "<code>#03A9F4</code> — Голубой\n<code>#2196F3</code> — Синий\n"
         "<code>#9C27B0</code> — Фиолетовый\n<code>#E91E63</code> — Розовый</blockquote>\n\n"
         "Нажмите на код, скопируйте его и отправьте боту или воспользуйтесь "
-        "кнопкой «Подобрать цвет»."
+        "кнопкой «Подобрать цвет». Несколько HEX-кодов можно отправить через пробел "
+        "или с новой строки."
     ),
     "invalid_color": (
         "Не удалось распознать цвет. Пример: <code>#8B5CF6</code> "
         "или <code>rgb(139, 92, 246)</code>."
+    ),
+    "too_many_colors": (
+        "Слишком много результатов за одну задачу. Можно выбрать до {maximum_colors} "
+        "цветов, а всего должно получиться не больше {maximum_items} элементов."
+    ),
+    "choose_intensity": (
+        "{icon} <b>Выберите интенсивность перекраски</b>\n\n"
+        "<blockquote>Исходных элементов: <b>{source_count}</b>\n"
+        "Выбрано цветов: <b>{color_count}</b>\n"
+        "Будет результатов: <b>{result_count}</b>\n"
+        "Цвета: <code>{colors}</code></blockquote>\n\n"
+        "Бережная сохраняет больше исходных оттенков, обычная подходит большинству "
+        "стикеров, насыщенная даёт плотный выбранный цвет."
     ),
     "choose_output": (
         "{icon} Цвет <code>{color}</code> принят.\n"
@@ -210,6 +226,10 @@ RU: dict[str, str] = {
         "Успешно добавлено: <b>{done} / {total}</b>. Уже добавленные элементы сохранены."
     ),
     "telegram_item_rejected": "Telegram отклонил подготовленный файл",
+    "retry_failed": (
+        "{icon} Повторяю только неудачные элементы: <b>{count}</b>. Уже готовые "
+        "результаты повторно обрабатываться не будут."
+    ),
     "partial": "Готово: {done} / {total}\nНе удалось обработать: {failed}",
     "file_too_large": "Файл слишком большой.",
     "source_invalid": "Файл пустой или повреждён.",

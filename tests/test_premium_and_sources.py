@@ -6,7 +6,7 @@ import pytest
 
 from app.services.premium_emoji import PremiumEmojiRegistry
 from app.services.source_resolver import find_pack_link, parse_pack_link
-from app.services.unicode_emoji import extract_single_emoji
+from app.services.unicode_emoji import extract_emojis, extract_single_emoji
 from app.validators.common import sanitize_filename
 
 
@@ -82,6 +82,10 @@ def test_unicode_emoji_grapheme_sequences(value: str) -> None:
 @pytest.mark.parametrize("value", ["hello", "🔥🔥", "A🔥", ""])
 def test_non_single_emoji_rejected(value: str) -> None:
     assert extract_single_emoji(value) is None
+
+
+def test_multiple_unicode_emoji_are_extracted_as_graphemes() -> None:
+    assert extract_emojis("🔥 👨‍💻\n❤️") == ["🔥", "👨‍💻", "❤️"]
 
 
 def test_filename_sanitization() -> None:
