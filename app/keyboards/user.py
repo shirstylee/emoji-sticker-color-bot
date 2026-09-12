@@ -32,6 +32,7 @@ BUTTON_LABELS = {
         "open_stickers": "Открыть @Stickers",
         "back": "Назад",
         "support": "Техническая поддержка",
+        "source_code": "Исходный код · AGPL-3.0",
         "home": "Главное меню",
         "existing_pack": "Добавить в существующий набор",
         "enter_pack_link": "Вставить ссылку",
@@ -64,6 +65,7 @@ BUTTON_LABELS = {
         "open_stickers": "Open @Stickers",
         "back": "Back",
         "support": "Technical support",
+        "source_code": "Source code · AGPL-3.0",
         "home": "Main menu",
         "existing_pack": "Add to existing pack",
         "enter_pack_link": "Paste a link",
@@ -164,7 +166,11 @@ def menu_back_keyboard(
 
 
 def information_keyboard(
-    registry: PremiumEmojiRegistry, language: str = "en"
+    registry: PremiumEmojiRegistry,
+    language: str = "en",
+    *,
+    support_url: str = "https://t.me/ragedick",
+    source_code_url: str = "https://github.com/shirstylee/emoji-sticker-color-bot",
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -173,8 +179,16 @@ def information_keyboard(
                     registry,
                     "SUPPORT",
                     _label(language, "support"),
-                    url="https://t.me/ragedick",
+                    url=support_url,
                     style="primary",
+                )
+            ],
+            [
+                _button(
+                    registry,
+                    "LINK",
+                    _label(language, "source_code"),
+                    url=source_code_url,
                 )
             ],
             [

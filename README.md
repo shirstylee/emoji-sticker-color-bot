@@ -13,7 +13,8 @@
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" />
   <img alt="aiogram 3.31" src="https://img.shields.io/badge/aiogram-3.31-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
   <img alt="Telegram Bot API 10.3" src="https://img.shields.io/badge/Bot_API-10.3-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
-  <img alt="Tests: 162 passed" src="https://img.shields.io/badge/tests-162%20passed-2EA44F?style=flat-square" />
+  <a href="https://github.com/shirstylee/emoji-sticker-color-bot/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/shirstylee/emoji-sticker-color-bot/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-blue" /></a>
   <img alt="Interface: Russian, admin RU and EN" src="https://img.shields.io/badge/interface-RU%20%7C%20admin%20RU%20%2F%20EN-7C3AED?style=flat-square" />
 </p>
 
@@ -49,7 +50,7 @@
 - 🌓 **Контрастный Adaptive** — светлые и тёмные детали переносятся в alpha-маску, а уже Adaptive-источники получают насыщенный точный цвет.
 - 💎 **Premium Emoji в интерфейсе** — используются реальные Custom Emoji ID из `Main.txt` с автоматическим Unicode fallback.
 - 🚦 **Контроль нагрузки** — очередь задач, отдельные лимиты тяжёлых операций, живой таймер Telegram `retry_after` и отмена без перезапуска job.
-- 🧹 **Автоочистка** — временные файлы удаляются после успеха, ошибки, отмены, таймаута и при следующем запуске.
+- 🧹 **Автоочистка** — временные файлы удаляются при закрытии задачи, отмене, таймауте и следующем запуске; дополнительные действия с одиночным результатом и повтор ошибок сохраняют активную задачу до её закрытия.
 - 🔐 **Без сохранения истории пользователей** — данные обычных пользователей, тексты и файлы не сохраняются в базе.
 - 🤖 **Telegram-only админ-панель** — русская панель мониторинга; язык, настройки и созданные администратором наборы сохраняются между перезапусками.
 
@@ -135,13 +136,19 @@ CPU-heavy операции выполняются через ограничен�
 Все Python-зависимости устанавливаются только в проектную `.venv`:
 
 ```powershell
+git clone https://github.com/shirstylee/emoji-sticker-color-bot.git
+cd emoji-sticker-color-bot
 py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
 .venv\Scripts\python.exe -m pip install -r requirements.lock
 Copy-Item .env.example .env
 ```
 
-Заполните `.env`, затем запустите диагностику и бота:
+Заполните `.env`: `BOT_TOKEN` возьмите у @BotFather, `OWNER_ID` замените на свой
+числовой Telegram ID. Пример содержит `OWNER_ID=0`, с которым запуск бота
+намеренно запрещён. Offline-диагностика доступна без токена.
+Для своей копии укажите контакт `SUPPORT_URL` и доступные пользователям исходники
+запущенной версии в `SOURCE_CODE_URL`. Затем запустите диагностику и бота:
 
 ```powershell
 .venv\Scripts\python.exe -m app.main --check
@@ -153,7 +160,8 @@ Copy-Item .env.example .env
 Windows-окружение нельзя переносить на Linux — создайте `.venv` заново:
 
 ```bash
-cd /opt/emoji-sticker-color-bot
+git clone https://github.com/shirstylee/emoji-sticker-color-bot.git
+cd emoji-sticker-color-bot
 python3.12 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip setuptools wheel
 .venv/bin/python -m pip install -r requirements.lock
@@ -162,9 +170,21 @@ cp .env.example .env
 .venv/bin/python -m app.main
 ```
 
-Готовый hardened unit находится в `deploy/emoji-sticker-color-bot.service`:
+Для Unicode Emoji на Debian/Ubuntu установите системный шрифт командой
+`sudo apt-get install fonts-noto-color-emoji` либо задайте `EMOJI_FONT_PATH`.
+PNG/WEBP/TGS/WEBM не требуют системного Emoji-шрифта.
+
+Готовый systemd unit находится в `deploy/emoji-sticker-color-bot.service`.
+Он рассчитан на checkout в `/opt/emoji-sticker-color-bot` и отдельного
+системного пользователя `emoji-bot`; при другом размещении измените пути в unit.
+Перед включением создайте пользователя, предоставьте ему чтение проекта и `.env`,
+а также запись в runtime-каталоги:
 
 ```bash
+sudo useradd --system --user-group --home-dir /opt/emoji-sticker-color-bot --shell /usr/sbin/nologin emoji-bot
+sudo install -d -o emoji-bot -g emoji-bot /opt/emoji-sticker-color-bot/data /opt/emoji-sticker-color-bot/temp /opt/emoji-sticker-color-bot/logs
+sudo chown root:emoji-bot /opt/emoji-sticker-color-bot/.env
+sudo chmod 640 /opt/emoji-sticker-color-bot/.env
 sudo cp deploy/emoji-sticker-color-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now emoji-sticker-color-bot
@@ -179,6 +199,8 @@ sudo systemctl enable --now emoji-sticker-color-bot
 ```env
 BOT_TOKEN=123456:replace_me
 OWNER_ID=123456789
+SUPPORT_URL=https://t.me/your_support_username
+SOURCE_CODE_URL=https://github.com/your-account/your-bot
 ```
 
 Основные пути:
@@ -193,6 +215,8 @@ COLOR_PICKER_URL=https://htmlcolorcodes.com/color-picker/
 ```
 
 Полный список лимитов и настроек с безопасными значениями по умолчанию находится в `.env.example`.
+`TEMP_ROOT` должен быть отдельным каталогом только для временных файлов этого бота:
+при запуске его содержимое очищается. Не направляйте его на домашнюю папку или корень проекта.
 Публикация наборов по умолчанию использует отдельное безопасное окно: 8 изменений
 за 240 секунд. Оно не применяется к предпросмотрам, одиночной перекраске и обычной
 отправке сообщений; серверный `retry_after` всегда имеет приоритет. Одиночные PNG/WEBP
@@ -238,9 +262,32 @@ Offline-диагностика не требует Bot Token:
 .venv\Scripts\python.exe -m ruff check .
 .venv\Scripts\python.exe -m mypy app
 .venv\Scripts\python.exe -m pytest
+.venv\Scripts\python.exe scripts/check_publication.py --history
 ```
 
 Тесты покрывают парсинг цветов, OKLab/alpha/contrast, Adaptive-маски, нормализацию TGS timing, WEBM, ZIP security, лимиты, параллельные админские задачи, живой Telegram 429 countdown, миграцию SQLite, silent `/admin` и ключевые workflow-компоненты.
+
+GitHub Actions запускает эти проверки на Python 3.12 и 3.14 без токена бота
+и производственных данных. `requirements.lock` фиксирует окружение запуска и разработки.
+
+## Лицензия и участие
+
+Оригинальный код: **AGPL-3.0-only**, copyright © 2026 shirstylee and contributors.
+Полный текст — [LICENSE](LICENSE), уведомление об авторстве — [NOTICE](NOTICE).
+Лицензия разрешает форки и коммерческое использование при соблюдении её условий.
+Для изменённых сетевых версий предусмотрено предоставление соответствующих исходников
+пользователям; ссылка задаётся через `SOURCE_CODE_URL` в меню «Информация».
+Подробнее: [объяснение GNU](https://www.gnu.org/licenses/why-affero-gpl.en.html).
+
+- [Как внести изменения](CONTRIBUTING.md)
+- [Сообщить об уязвимости](SECURITY.md)
+- [Какие данные обрабатывает бот](PRIVACY.md)
+- [Сторонние материалы и зависимости](THIRD_PARTY_NOTICES.md)
+- [Подготовка к публикации](docs/PUBLISHING.md)
+
+Бот использует Telegram ID и временные файлы для выполнения задач, а сведения
+об администраторах хранит в SQLite. Отсутствие постоянной истории обычных пользователей
+не означает отсутствия обработки персональных данных; подробности приведены в PRIVACY.md.
 
 ---
 

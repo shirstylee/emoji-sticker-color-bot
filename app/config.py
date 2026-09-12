@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.constants import MIB
@@ -17,8 +17,10 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    bot_token: str = ""
+    bot_token: str = Field(default="", repr=False)
     owner_id: int = 0
+    support_url: HttpUrl = HttpUrl("https://t.me/ragedick")
+    source_code_url: HttpUrl = HttpUrl("https://github.com/shirstylee/emoji-sticker-color-bot")
     color_picker_url: str = "https://htmlcolorcodes.com/color-picker/"
     database_path: Path = Path("data/bot.db")
     temp_root: Path = Path("temp/jobs")

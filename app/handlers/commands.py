@@ -306,7 +306,12 @@ async def menu_callback(callback: CallbackQuery, context: AppContext) -> None:
                 icon=context.premium.html("INFO"),
                 **context.premium.placeholders(),
             ),
-            reply_markup=information_keyboard(context.premium, language),
+            reply_markup=information_keyboard(
+                context.premium,
+                language,
+                support_url=str(context.settings.support_url),
+                source_code_url=str(context.settings.source_code_url),
+            ),
         )
 
 

@@ -7,6 +7,8 @@ name = "emoji-sticker-color-bot"
 version = "1.0.0"
 description = "Emoji & Sticker Color Bot — privacy-first Telegram sticker recoloring"
 readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.12"
 dependencies = [
     "aiogram==3.31.0",
@@ -24,6 +26,10 @@ dependencies = [
 
 [project.scripts]
 emoji-sticker-color-bot = "app.main:run"
+
+[project.urls]
+Repository = "https://github.com/shirstylee/emoji-sticker-color-bot"
+Issues = "https://github.com/shirstylee/emoji-sticker-color-bot/issues"
 
 [tool.setuptools.packages.find]
 include = ["app*"]

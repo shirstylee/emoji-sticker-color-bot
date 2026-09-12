@@ -185,7 +185,19 @@ def test_single_result_and_information_actions(
     information = information_keyboard(registry, "ru")
     assert str(information.inline_keyboard[0][0].url) == "https://t.me/ragedick"
     assert information.inline_keyboard[0][0].style == "primary"
-    assert information.inline_keyboard[1][0].callback_data == "menu:home"
+    assert information.inline_keyboard[1][0].url == (
+        "https://github.com/shirstylee/emoji-sticker-color-bot"
+    )
+    assert information.inline_keyboard[-1][0].callback_data == "menu:home"
+
+    custom = information_keyboard(
+        registry,
+        "ru",
+        support_url="https://t.me/example_support",
+        source_code_url="https://github.com/example/modified-bot",
+    )
+    assert custom.inline_keyboard[0][0].url == "https://t.me/example_support"
+    assert custom.inline_keyboard[1][0].url == "https://github.com/example/modified-bot"
 
 
 def test_intensity_choice_and_failed_retry_keyboards(

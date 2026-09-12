@@ -35,6 +35,7 @@ dist/
 wheelhouse/
 
 # Runtime data
+data/
 data/*.db
 data/*.db-shm
 data/*.db-wal
@@ -43,6 +44,27 @@ data/*.sqlite3
 temp/
 logs/
 *.log
+*.log.*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.session
+*.session-journal
+backups/
+
+# Private keys, credential exports and local agent state
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account.json
+.codex/
+.agents/
+.local/
 
 # Editors and IDEs
 .idea/

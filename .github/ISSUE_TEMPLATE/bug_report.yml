@@ -1,0 +1,31 @@
+name: Ошибка
+description: Сообщить о воспроизводимой ошибке бота
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Не публикуйте токен бота, `.env`, Telegram ID, личные сообщения или дампы базы.
+        Для уязвимостей используйте порядок из SECURITY.md.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как воспроизвести
+      description: Опишите шаги и формат входного файла; используйте безопасный тестовый пример.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Ожидаемый и фактический результат
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Окружение
+      description: Версия Python, ОС и хеш коммита проекта.
+  - type: textarea
+    id: error
+    attributes:
+      label: Текст ошибки без секретов и личных данных
+      render: text
