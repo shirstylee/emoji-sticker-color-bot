@@ -11,17 +11,17 @@ license = "AGPL-3.0-only"
 license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.12"
 dependencies = [
-    "aiogram==3.31.0",
+    "aiogram==3.32.0",
     "aiofiles==25.1.0",
     "aiosqlite==0.22.1",
-    "emoji==2.15.0",
-    "imageio-ffmpeg==0.6.0",
-    "numpy==2.5.2",
-    "Pillow==12.3.0",
+    "emoji==2.16.0",
+    "imageio-ffmpeg==0.8.1",
+    "numpy==2.5.5",
+    "Pillow==13.0.0",
     "psutil==7.2.2",
-    "pydantic-settings==2.15.0",
-    "python-slugify==8.0.4",
-    "regex==2026.7.19",
+    "pydantic-settings==2.16.3",
+    "python-slugify==9.2.0",
+    "regex==2026.11.18",
 ]
 
 [project.scripts]
